@@ -1772,7 +1772,6 @@ int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 {
 	int ret;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
-	u32 reg_val;
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	dma_addr_t buffer_addr;
 	size_t buffer_size;
@@ -1792,7 +1791,7 @@ int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 
 	wave5_vdi_clear_memory(vpu_dev, &p_enc_info->vb_work);
 
-	if (vpu_dev->product == PRODUCT_ID_420L) {
+	{
 		u32 fail_res = 0;
 
 		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
@@ -1800,25 +1799,8 @@ int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, &fail_res);
 		if (ret)
-			dev_warn(inst->dev->dev, "wave420l enc create_instance failed: %d (fail=0x%x)\n",
+			dev_warn(inst->dev->dev, "w4 enc create_instance failed: %d (fail=0x%x)\n",
 				 ret, fail_res);
-	} else {
-		vpu_write_reg(inst->dev, W5_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
-		vpu_write_reg(inst->dev, W5_WORK_SIZE, p_enc_info->vb_work.size);
-
-		vpu_write_reg(inst->dev, W5_CMD_ADDR_SEC_AXI, vpu_dev->sram_buf.daddr);
-		vpu_write_reg(inst->dev, W5_CMD_SEC_AXI_SIZE, vpu_dev->sram_buf.size);
-
-		reg_val = (open_param->line_buf_int_en << 6) | BITSTREAM_ENDIANNESS_BIG_ENDIAN;
-		vpu_write_reg(inst->dev, W5_CMD_BS_PARAM, reg_val);
-		vpu_write_reg(inst->dev, W5_CMD_EXT_ADDR, 0);
-		vpu_write_reg(inst->dev, W5_CMD_NUM_CQ_DEPTH_M1, WAVE521_COMMAND_QUEUE_DEPTH - 1);
-
-		/* This register must be reset explicitly */
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SRC_OPTIONS, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_VCORE_INFO, 1);
-
-		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, NULL);
 	}
 	if (ret)
 		goto free_vb_work;
