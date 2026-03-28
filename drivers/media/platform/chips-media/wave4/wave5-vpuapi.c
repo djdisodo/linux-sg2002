@@ -30,7 +30,7 @@ static int wave5_initialize_vpu(struct device *dev, u8 *code, size_t size)
 		 * Reinitialize in-place and propagate the real status instead of
 		 * forcing -EBUSY to the probe path.
 		 */
-		ret = wave5_vpu_re_init(dev, (void *)code, size);
+		ret = wave4_vpu_re_init(dev, (void *)code, size);
 		goto err_out;
 	}
 
@@ -38,7 +38,7 @@ static int wave5_initialize_vpu(struct device *dev, u8 *code, size_t size)
 	if (ret)
 		goto err_out;
 
-	ret = wave5_vpu_init(dev, (void *)code, size);
+	ret = wave4_vpu_init(dev, (void *)code, size);
 
 err_out:
 	mutex_unlock(&vpu_dev->hw_lock);
@@ -186,7 +186,7 @@ int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_pa
 	p_dec_info->target_temp_id = DECODE_ALL_TEMPORAL_LAYERS;
 	p_dec_info->target_spatial_id = DECODE_ALL_SPATIAL_LAYERS;
 
-	ret = wave5_vpu_build_up_dec_param(inst, open_param);
+	ret = wave4_vpu_build_up_dec_param(inst, open_param);
 	mutex_unlock(&vpu_dev->hw_lock);
 
 	return ret;
@@ -728,7 +728,7 @@ int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_pa
 	p_enc_info = &inst->codec_info->enc_info;
 	p_enc_info->open_param = *open_param;
 
-	ret = wave5_vpu_build_up_enc_param(vpu_dev->dev, inst, open_param);
+	ret = wave4_vpu_build_up_enc_param(vpu_dev->dev, inst, open_param);
 	mutex_unlock(&vpu_dev->hw_lock);
 
 	return ret;

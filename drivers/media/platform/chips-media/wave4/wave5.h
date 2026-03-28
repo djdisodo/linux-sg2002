@@ -56,18 +56,18 @@
 
 bool wave5_vpu_is_init(struct vpu_device *vpu_dev);
 
-unsigned int wave5_vpu_get_product_id(struct vpu_device *vpu_dev);
+unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev);
 
 int wave5_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision);
 
-int wave5_vpu_init(struct device *dev, u8 *fw, size_t size);
+int wave4_vpu_init(struct device *dev, u8 *fw, size_t size);
 
-int wave5_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
+int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
 			 size_t size);
 
 int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode);
 
-int wave5_vpu_build_up_dec_param(struct vpu_instance *inst, struct dec_open_param *param);
+int wave4_vpu_build_up_dec_param(struct vpu_instance *inst, struct dec_open_param *param);
 
 int wave5_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos);
 
@@ -77,7 +77,7 @@ int wave5_vpu_dec_register_framebuffer(struct vpu_instance *inst,
 				       struct frame_buffer *fb_arr, enum tiled_map_type map_type,
 				       unsigned int count);
 
-int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size);
+int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size);
 
 int wave5_vpu_dec_init_seq(struct vpu_instance *inst);
 
@@ -101,7 +101,7 @@ int wave5_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr);
 
 /***< WAVE5 encoder >******/
 
-int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
+int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 				 struct enc_open_param *open_param);
 
 int wave5_vpu_enc_init_seq(struct vpu_instance *inst);

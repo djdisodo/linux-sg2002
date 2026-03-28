@@ -362,7 +362,7 @@ bool wave5_vpu_is_init(struct vpu_device *vpu_dev)
 	return vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC) != 0 || vpu_dev->fw_running;
 }
 
-unsigned int wave5_vpu_get_product_id(struct vpu_device *vpu_dev)
+unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev)
 {
 	u32 val = vpu_read_reg(vpu_dev, W5_PRODUCT_NUMBER);
 
@@ -622,7 +622,7 @@ int wave5_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision)
 	return revision ? 0 : -EINVAL;
 }
 
-int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
+int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 {
 	struct vpu_buf *common_vb;
 	dma_addr_t code_base;
@@ -734,7 +734,7 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 	return ret;
 }
 
-int wave5_vpu_build_up_dec_param(struct vpu_instance *inst,
+int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 				 struct dec_open_param *param)
 {
 	int ret;
@@ -1306,7 +1306,7 @@ int wave5_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *
 	return 0;
 }
 
-int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
+int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 {
 	struct vpu_buf *common_vb;
 	dma_addr_t code_base;
@@ -1444,7 +1444,7 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 	return ret;
 }
 
-int wave5_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
+int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
 			 size_t size)
 {
 	u32 reg_val, remap_size;
@@ -1539,7 +1539,7 @@ int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
 
 	if (reset_mode == SW_RESET_SAFETY) {
-		ret = wave5_vpu_sleep_wake(dev, true, NULL, 0);
+		ret = wave4_vpu_sleep_wake(dev, true, NULL, 0);
 		if (ret)
 			return ret;
 	}
@@ -1633,7 +1633,7 @@ int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
 	}
 	if (reset_mode == SW_RESET_SAFETY || reset_mode == SW_RESET_FORCE)
-		ret = wave5_vpu_sleep_wake(dev, false, NULL, 0);
+		ret = wave4_vpu_sleep_wake(dev, false, NULL, 0);
 
 	return ret;
 }
@@ -1717,7 +1717,7 @@ int wave5_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr)
 /* ENCODER functions */
 /************************************************************************/
 
-int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
+int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 				 struct enc_open_param *open_param)
 {
 	int ret;

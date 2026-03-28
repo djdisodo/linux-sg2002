@@ -218,7 +218,7 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 	ret = wave4_vpu_init_with_bitcode(dev, (u8 *)fw->data, fw->size);
 	if (ret == -EBUSY) {
 		dev_warn(dev, "VPU firmware is already running, reusing resident firmware\n");
-		ret = wave5_vpu_re_init(dev, (u8 *)fw->data, fw->size);
+		ret = wave4_vpu_re_init(dev, (u8 *)fw->data, fw->size);
 		if (ret) {
 			dev_warn(dev, "w4 resident re-init/setup failed: %d\n", ret);
 			/*
@@ -226,7 +226,7 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 			 * based failures, since some boots recover only on the
 			 * cold-init path.
 			 */
-			ret = wave5_vpu_init(dev, (u8 *)fw->data, fw->size);
+			ret = wave4_vpu_init(dev, (u8 *)fw->data, fw->size);
 			if (ret) {
 				dev_warn(dev,
 					 "w4 firmware recovery failed: %d, falling back to resident fw\n",
@@ -481,7 +481,7 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "wave4_vdi_init, fail: %d\n", ret);
 		goto err_clk_dis;
 	}
-	dev->product = wave5_vpu_get_product_id(dev);
+	dev->product = wave4_vpu_get_product_id(dev);
 
 	INIT_LIST_HEAD(&dev->instances);
 
