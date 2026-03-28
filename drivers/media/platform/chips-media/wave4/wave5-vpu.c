@@ -274,13 +274,6 @@ static void wave5_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 	u32 val;
 	int ret;
 
-	/*
-	 * Wave420L uses the H265 core path and requires the shared VC SRAM mux
-	 * to be routed accordingly (same behavior as the BSP driver).
-	 */
-	if (!of_device_is_compatible(pdev->dev.of_node, "sophgo,sg2002-wave420l"))
-		return;
-
 	if (of_find_property(pdev->dev.of_node, "sophgo,syscon", NULL)) {
 		syscon = syscon_regmap_lookup_by_phandle(pdev->dev.of_node, "sophgo,syscon");
 		if (IS_ERR(syscon)) {
@@ -302,10 +295,10 @@ static void wave5_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 	if (ret)
 		dev_warn(&pdev->dev, "failed to configure VC SRAM share mux: %d\n", ret);
 
-program_vc_ctrl_direct:
+	program_vc_ctrl_direct:
 	/*
 	 * BSP programs VC SRAM mux in the dedicated VC control window:
-	 *   base 0x0B030000, offset 0x24, value 0x2 for H265(Wave420L).
+	 *   base 0x0B030000, offset 0x24, value 0x2 for H265(Wave4).
 	 * Keep this direct path to match shipped behavior.
 	 */
 	vc_ctrl = devm_ioremap(&pdev->dev, SG2002_VC_CTRL_BASE, SG2002_VC_CTRL_SIZE);
@@ -334,8 +327,6 @@ static void wave5_vpu_configure_sg2002_dram_remap(struct platform_device *pdev)
 	int ret;
 
 	/* Match BSP behavior: enable DRAM 32..35 remap window for VCODEC accesses. */
-	if (!of_device_is_compatible(pdev->dev.of_node, "sophgo,sg2002-wave420l"))
-		return;
 
 	if (of_find_property(pdev->dev.of_node, "sophgo,syscon", NULL)) {
 		syscon = syscon_regmap_lookup_by_phandle(pdev->dev.of_node, "sophgo,syscon");
@@ -615,14 +606,14 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 	ida_destroy(&dev->inst_ida);
 }
 
-static const struct wave5_match_data sophgo_wave420l_data = {
+static const struct wave5_match_data sophgo_wave4_data = {
 	.flags = WAVE5_IS_ENC | WAVE5_IS_DEC,
 	.fw_name = "fw_vcodec/monet.bin",
 	.allow_internal_sram = true,
 };
 
 static const struct of_device_id wave5_dt_ids[] = {
-	{ .compatible = "sophgo,sg2002-wave420l", .data = &sophgo_wave420l_data },
+	{ .compatible = "sophgo,sg2002-wave420l", .data = &sophgo_wave4_data },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, wave5_dt_ids);
