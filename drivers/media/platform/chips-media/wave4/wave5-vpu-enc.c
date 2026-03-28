@@ -1255,23 +1255,21 @@ static int wave5_set_enc_openparam(struct enc_open_param *open_param,
 	}
 	open_param->wave_param.forced_idr_header_enable = input.forced_idr_header_enable;
 
-	if (inst->dev->product_code == WAVE420L_CODE) {
-		/*
-		 * Keep Wave420L defaults close to the BSP path.
-		 * RC is bitrate-driven there, and several advanced toggles are
-		 * expected to stay conservative unless explicitly tuned.
-		 */
-		open_param->rc_enable = open_param->bit_rate ? 1 : 0;
-		open_param->wave_param.wpp_enable = 0;
-		open_param->wave_param.sao_enable = 0;
-		open_param->wave_param.intra_nx_n_enable = 0;
-		open_param->wave_param.max_num_merge = 2;
-		open_param->wave_param.tmvp_enable = 1;
-		open_param->wave_param.cu_level_rc_enable = open_param->rc_enable;
-		open_param->wave_param.hvs_qp_enable = open_param->rc_enable;
-		if (!open_param->rc_enable)
-			open_param->wave_param.hvs_qp_scale = 0;
-	}
+	/*
+	 * Keep Wave4 defaults close to the BSP path.
+	 * RC is bitrate-driven there, and several advanced toggles are
+	 * expected to stay conservative unless explicitly tuned.
+	 */
+	open_param->rc_enable = open_param->bit_rate ? 1 : 0;
+	open_param->wave_param.wpp_enable = 0;
+	open_param->wave_param.sao_enable = 0;
+	open_param->wave_param.intra_nx_n_enable = 0;
+	open_param->wave_param.max_num_merge = 2;
+	open_param->wave_param.tmvp_enable = 1;
+	open_param->wave_param.cu_level_rc_enable = open_param->rc_enable;
+	open_param->wave_param.hvs_qp_enable = open_param->rc_enable;
+	if (!open_param->rc_enable)
+		open_param->wave_param.hvs_qp_scale = 0;
 
 	return 0;
 }
@@ -1284,31 +1282,29 @@ static int initialize_sequence(struct vpu_instance *inst)
 	int ret;
 
 	/*
-	 * Wave420L firmware expects a valid BS buffer at SET_PARAM time.
+	 * Wave4 firmware expects a valid BS buffer at SET_PARAM time.
 	 * Allocate a dedicated internal bitstream ring for sequence setup.
 	 */
-	if (inst->dev->product_code == WAVE420L_CODE) {
-		if (!inst->bitstream_vbuf.size) {
-			/*
-			 * Keep this comfortably above tiny capture queue sizes.
-			 * This ring is used only for Wave420L setup compatibility.
-			 */
-			inst->bitstream_vbuf.size = 1024 * 1024;
-			ret = wave5_vdi_allocate_dma_memory(inst->dev, &inst->bitstream_vbuf);
-			if (ret) {
-				memset(&inst->bitstream_vbuf, 0, sizeof(inst->bitstream_vbuf));
-				return ret;
-			}
-			wave5_vdi_clear_memory(inst->dev, &inst->bitstream_vbuf);
+	if (!inst->bitstream_vbuf.size) {
+		/*
+		 * Keep this comfortably above tiny capture queue sizes.
+		 * This ring is used only for setup compatibility.
+		 */
+		inst->bitstream_vbuf.size = 1024 * 1024;
+		ret = wave5_vdi_allocate_dma_memory(inst->dev, &inst->bitstream_vbuf);
+		if (ret) {
+			memset(&inst->bitstream_vbuf, 0, sizeof(inst->bitstream_vbuf));
+			return ret;
 		}
-
-		p_enc_info->stream_buf_start_addr = inst->bitstream_vbuf.daddr;
-		p_enc_info->stream_buf_size = inst->bitstream_vbuf.size;
-		p_enc_info->stream_buf_end_addr = p_enc_info->stream_buf_start_addr +
-						  p_enc_info->stream_buf_size;
-		p_enc_info->stream_rd_ptr = p_enc_info->stream_buf_start_addr;
-		p_enc_info->stream_wr_ptr = p_enc_info->stream_buf_start_addr;
+		wave5_vdi_clear_memory(inst->dev, &inst->bitstream_vbuf);
 	}
+
+	p_enc_info->stream_buf_start_addr = inst->bitstream_vbuf.daddr;
+	p_enc_info->stream_buf_size = inst->bitstream_vbuf.size;
+	p_enc_info->stream_buf_end_addr = p_enc_info->stream_buf_start_addr +
+					  p_enc_info->stream_buf_size;
+	p_enc_info->stream_rd_ptr = p_enc_info->stream_buf_start_addr;
+	p_enc_info->stream_wr_ptr = p_enc_info->stream_buf_start_addr;
 
 	ret = wave5_vpu_enc_issue_seq_init(inst);
 	if (ret) {
@@ -1318,15 +1314,9 @@ static int initialize_sequence(struct vpu_instance *inst)
 	}
 
 	if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0) {
-		if (inst->dev->product_code == WAVE420L_CODE)
-			dev_warn(inst->dev->dev,
-				 "%s: wave420l interrupt timeout, falling back to direct result polling\n",
-				 __func__);
-		else {
-			dev_err(inst->dev->dev, "%s: wave4_vpu_wait_interrupt failed\n",
-				__func__);
-			return -EINVAL;
-		}
+		dev_warn(inst->dev->dev,
+			 "%s: w4 interrupt timeout, falling back to direct result polling\n",
+			 __func__);
 	}
 
 	ret = wave5_vpu_enc_complete_seq_init(inst, &initial_info);
