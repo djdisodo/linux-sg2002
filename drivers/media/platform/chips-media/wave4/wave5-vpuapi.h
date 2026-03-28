@@ -19,11 +19,7 @@
 #include "wave5-vdi.h"
 
 enum product_id {
-	PRODUCT_ID_515,
-	PRODUCT_ID_420L,
-	PRODUCT_ID_521,
-	PRODUCT_ID_511,
-	PRODUCT_ID_517,
+	PRODUCT_ID_W4,
 	PRODUCT_ID_NONE,
 };
 

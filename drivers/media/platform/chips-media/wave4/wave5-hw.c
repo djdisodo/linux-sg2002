@@ -367,7 +367,7 @@ unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev)
 	u32 val = vpu_read_reg(vpu_dev, W5_PRODUCT_NUMBER);
 
 	if (val == W4_PRODUCT_CODE)
-		return PRODUCT_ID_420L;
+		return PRODUCT_ID_W4;
 
 	dev_err(vpu_dev->dev, "Unexpected product id (%x), expected Wave4\n", val);
 
@@ -589,7 +589,7 @@ static int setup_wave5_properties(struct device *dev)
 	p_attr->product_name[1] = '2';
 	p_attr->product_name[2] = '0';
 	p_attr->product_name[3] = 'L';
-	p_attr->product_id = PRODUCT_ID_420L;
+	p_attr->product_id = PRODUCT_ID_W4;
 	p_attr->support_decoders = BIT(STD_HEVC);
 	p_attr->support_encoders = BIT(STD_HEVC);
 	p_attr->support_backbone = 0;
@@ -2896,7 +2896,6 @@ int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_pa
 {
 	u32 pic_width;
 	u32 pic_height;
-	s32 product_id = inst->dev->product;
 	struct vpu_attr *p_attr = &inst->dev->attr;
 	struct enc_wave_param *param;
 
@@ -2913,9 +2912,8 @@ int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_pa
 		return -EOPNOTSUPP;
 	}
 
-	if (inst->std != W_HEVC_ENC &&
-	    !(inst->std == W_AVC_ENC && product_id == PRODUCT_ID_521)) {
-		dev_err(inst->dev->dev, "Unsupported encoder-codec & product combination\n");
+	if (inst->std != W_HEVC_ENC) {
+		dev_err(inst->dev->dev, "Wave4 encoder supports HEVC only\n");
 		return -EOPNOTSUPP;
 	}
 
