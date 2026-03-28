@@ -867,9 +867,8 @@ int wave5_vpu_dec_init_seq(struct vpu_instance *inst)
 
 	bs_option = get_bitstream_options(p_dec_info);
 
-	/* Without RD_PTR_VALID_FLAG Wave515 ignores RD_PTR value */
-	if (PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code))
-		bs_option |= BSOPTION_RD_PTR_VALID_FLAG;
+	/* Wave4 requires RD_PTR_VALID_FLAG to consume the programmed RD pointer. */
+	bs_option |= BSOPTION_RD_PTR_VALID_FLAG;
 
 	vpu_write_reg(inst->dev, bs_opt_reg, bs_option);
 
@@ -1157,15 +1156,9 @@ static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst)
 	if (!sram_size)
 		return 0;
 
-	/*
-	 * TODO: calculate bit_size, ip_size, lf_size from width and bitdepth
-	 * for Wave521.
-	 */
-	if (PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code)) {
-		bit_size = DIV_ROUND_UP(width, 16) * 5 * 8;
-		ip_size = ALIGN(width, 16) * 2 * bitdepth / 8;
-		lf_size = ALIGN(width, 16) * 10 * bitdepth / 8;
-	}
+	bit_size = DIV_ROUND_UP(width, 16) * 5 * 8;
+	ip_size = ALIGN(width, 16) * 2 * bitdepth / 8;
+	lf_size = ALIGN(width, 16) * 10 * bitdepth / 8;
 
 	if (p_dec_info->sec_axi_info.use_bit_enable && sram_size >= bit_size) {
 		ret |= BIT(0);
