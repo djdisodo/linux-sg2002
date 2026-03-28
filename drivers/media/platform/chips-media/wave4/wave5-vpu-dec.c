@@ -1403,13 +1403,11 @@ static int wave5_vpu_dec_start_streaming(struct vb2_queue *q, unsigned int count
 			goto return_buffers;
 
 		if (inst->state == VPU_INST_STATE_INIT_SEQ &&
-		    inst->dev->product_code == WAVE521C_CODE) {
-			if (initial_info->luma_bitdepth != 8) {
-				dev_info(inst->dev->dev, "%s: no support for %d bit depth",
-					 __func__, initial_info->luma_bitdepth);
-				ret = -EINVAL;
-				goto return_buffers;
-			}
+		    initial_info->luma_bitdepth != 8) {
+			dev_info(inst->dev->dev, "%s: no support for %d bit depth",
+				 __func__, initial_info->luma_bitdepth);
+			ret = -EINVAL;
+			goto return_buffers;
 		}
 
 	}
