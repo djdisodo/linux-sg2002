@@ -36,15 +36,6 @@ void wave4_cleanup_instance(struct vpu_instance *inst, struct file *filp)
 {
 	int i;
 
-	/*
-	 * For Wave515 SRAM memory is allocated at
-	 * wave4_vpu_dec_register_device() and freed at
-	 * wave4_vpu_dec_unregister_device().
-	 */
-	if (list_is_singular(&inst->list) &&
-	    !PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code))
-		wave5_vdi_free_sram(inst->dev);
-
 	for (i = 0; i < inst->fbc_buf_count; i++)
 		wave5_vpu_dec_reset_framebuffer(inst, i);
 
