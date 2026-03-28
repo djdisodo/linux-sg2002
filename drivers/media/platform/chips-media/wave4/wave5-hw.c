@@ -366,25 +366,10 @@ unsigned int wave5_vpu_get_product_id(struct vpu_device *vpu_dev)
 {
 	u32 val = vpu_read_reg(vpu_dev, W5_PRODUCT_NUMBER);
 
-	switch (val) {
-	case WAVE515_CODE:
-		return PRODUCT_ID_515;
-	case WAVE420L_CODE:
+	if (val == WAVE420L_CODE)
 		return PRODUCT_ID_420L;
-	case WAVE521C_CODE:
-		return PRODUCT_ID_521;
-	case WAVE521_CODE:
-	case WAVE521C_DUAL_CODE:
-	case WAVE521E1_CODE:
-	case WAVE511_CODE:
-	case WAVE517_CODE:
-	case WAVE537_CODE:
-		dev_err(vpu_dev->dev, "Unsupported product id (%x)\n", val);
-		break;
-	default:
-		dev_err(vpu_dev->dev, "Invalid product id (%x)\n", val);
-		break;
-	}
+
+	dev_err(vpu_dev->dev, "Unexpected product id (%x), expected Wave4\n", val);
 
 	return PRODUCT_ID_NONE;
 }
