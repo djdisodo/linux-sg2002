@@ -44,7 +44,7 @@ int wave4_vdi_init(struct device *dev)
 		return ret;
 	}
 
-	if (!PRODUCT_CODE_W_SERIES(vpu_dev->product_code)) {
+	if (vpu_dev->product_code != W4_PRODUCT_CODE) {
 		WARN_ONCE(1, "unsupported product code: 0x%x\n", vpu_dev->product_code);
 		return -EOPNOTSUPP;
 	}

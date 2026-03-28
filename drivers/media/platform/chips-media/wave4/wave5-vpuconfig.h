@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause) */
 /*
- * Wave5 series multi-standard codec IP - product config definitions
+ * Wave4 codec IP - product config definitions
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -10,12 +10,7 @@
 
 #define W4_PRODUCT_CODE			0x4201
 
-#define PRODUCT_CODE_W_SERIES(x)	((x) == W4_PRODUCT_CODE)
-
-#define WAVE517_WORKBUF_SIZE            (2 * 1024 * 1024)
 #define W4_ENC_WORKBUF_SIZE             (128 * 1024)      //HEVC 128K, AVC 40K
-#define WAVE521DEC_WORKBUF_SIZE         (1784 * 1024)
-#define WAVE515DEC_WORKBUF_SIZE		(2 * 1024 * 1024)
 #define W4_DEC_WORKBUF_SIZE             (3 * 1024 * 1024)
 
 #define MAX_NUM_INSTANCE                32
@@ -60,22 +55,15 @@
 #define VLC_BUF_NUM                     (2)
 
 #define W4_COMMAND_QUEUE_DEPTH		(2)
-#define WAVE515_COMMAND_QUEUE_DEPTH	(4)
 
 #define W5_REMAP_INDEX0                 0
 #define W5_REMAP_INDEX1                 1
 #define W5_REMAP_MAX_SIZE               (1024 * 1024)
 
-#define WAVE521_MAX_CODE_BUF_SIZE	(2 * 1024 * 1024)
-#define WAVE515_MAX_CODE_BUF_SIZE	(1024 * 1024)
 #define W4_MAX_CODE_BUF_SIZE            (256 * 1024)
 #define WAVE5_TEMPBUF_SIZE              (1024 * 1024)
 #define W4_TEMPBUF_SIZE                 (512 * 1024)
 
-#define WAVE521_SIZE_COMMON		(WAVE521_MAX_CODE_BUF_SIZE + WAVE5_TEMPBUF_SIZE)
-#define WAVE515_ONE_TASKBUF_SIZE	(8 * 1024 * 1024)
-#define WAVE515_SIZE_COMMON		(WAVE515_MAX_CODE_BUF_SIZE + WAVE5_TEMPBUF_SIZE + \
-					 WAVE515_COMMAND_QUEUE_DEPTH * WAVE515_ONE_TASKBUF_SIZE)
 #define W4_SIZE_COMMON                  (W4_MAX_CODE_BUF_SIZE + W4_TEMPBUF_SIZE)
 
 //=====4. VPU REPORT MEMORY  ======================//

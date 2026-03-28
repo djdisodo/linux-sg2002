@@ -157,7 +157,6 @@ enum set_param_option {
 
 /* bitstream_buffer_size */
 #define MIN_BITSTREAM_BUFFER_SIZE		1024
-#define MIN_BITSTREAM_BUFFER_SIZE_WAVE521	(1024 * 64)
 
 /* vbv_buffer_size */
 #define MIN_VBV_BUFFER_SIZE			10
