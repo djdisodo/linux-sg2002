@@ -247,7 +247,7 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 		return ret;
 	}
 
-	ret = wave5_vpu_init_with_bitcode(dev, (u8 *)fw->data, fw->size);
+	ret = wave4_vpu_init_with_bitcode(dev, (u8 *)fw->data, fw->size);
 		if (ret == -EBUSY) {
 			dev_warn(dev, "VPU firmware is already running, reusing resident firmware\n");
 			if (vpu_dev->product_code == WAVE420L_CODE) {
@@ -299,7 +299,7 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 		return 0;
 	}
 
-	ret = wave5_vpu_get_version_info(dev, revision, &product_id);
+	ret = wave4_vpu_get_version_info(dev, revision, &product_id);
 	if (ret) {
 		if (vpu_dev->fw_running) {
 			dev_warn(dev, "vpu_get_version_info fail: %d, continuing with unknown revision\n",

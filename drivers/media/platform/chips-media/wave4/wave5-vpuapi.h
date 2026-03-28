@@ -856,9 +856,9 @@ int wave5_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
 void wave5_vdi_allocate_sram(struct vpu_device *vpu_dev);
 void wave5_vdi_free_sram(struct vpu_device *vpu_dev);
 
-int wave5_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size);
-int wave5_vpu_flush_instance(struct vpu_instance *inst);
-int wave5_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *product_id);
+int wave4_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size);
+int wave4_vpu_flush_instance(struct vpu_instance *inst);
+int wave4_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *product_id);
 int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_param);
 int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res);
 int wave5_vpu_dec_issue_seq_init(struct vpu_instance *inst);

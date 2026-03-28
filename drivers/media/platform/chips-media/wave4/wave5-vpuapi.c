@@ -45,7 +45,7 @@ err_out:
 	return ret;
 }
 
-int wave5_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size)
+int wave4_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size)
 {
 	if (!bitcode || size == 0)
 		return -EINVAL;
@@ -53,7 +53,7 @@ int wave5_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size)
 	return wave5_initialize_vpu(dev, bitcode, size);
 }
 
-int wave5_vpu_flush_instance(struct vpu_instance *inst)
+int wave4_vpu_flush_instance(struct vpu_instance *inst)
 {
 	int ret = 0;
 	int mutex_ret = 0;
@@ -102,7 +102,7 @@ int wave5_vpu_flush_instance(struct vpu_instance *inst)
 	return ret;
 }
 
-int wave5_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *product_id)
+int wave4_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *product_id)
 {
 	int ret;
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);

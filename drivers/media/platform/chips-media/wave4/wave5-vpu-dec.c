@@ -1452,7 +1452,7 @@ static int streamoff_output(struct vb2_queue *q)
 			wave5_vpu_dec_set_disp_flag(inst, dec_info.index_frame_display);
 	}
 
-	ret = wave5_vpu_flush_instance(inst);
+	ret = wave4_vpu_flush_instance(inst);
 	if (ret)
 		return ret;
 
