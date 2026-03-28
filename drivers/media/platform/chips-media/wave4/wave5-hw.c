@@ -637,18 +637,11 @@ int wave5_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision)
 	return revision ? 0 : -EINVAL;
 }
 
-static void remap_page(struct vpu_device *vpu_dev, dma_addr_t code_base, u32 index)
-{
-	vpu_write_reg(vpu_dev, W5_VPU_REMAP_CTRL, REMAP_CTRL_REGISTER_VALUE(index));
-	vpu_write_reg(vpu_dev, W5_VPU_REMAP_VADDR, index * W5_REMAP_MAX_SIZE);
-	vpu_write_reg(vpu_dev, W5_VPU_REMAP_PADDR, code_base + index * W5_REMAP_MAX_SIZE);
-}
-
 int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 {
 	struct vpu_buf *common_vb;
-	dma_addr_t code_base, temp_base;
-	u32 code_size, temp_size;
+	dma_addr_t code_base;
+	u32 code_size;
 	size_t code_bytes_required;
 	u32 i, reg_val, reason_code;
 	int ret;
@@ -657,34 +650,16 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 	common_vb = &vpu_dev->common_mem;
 
 	code_base = common_vb->daddr;
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		dev_info(vpu_dev->dev, "wave420l init: code_base=0x%llx fw_size=%zu\n",
-			 (unsigned long long)code_base, size);
+	dev_info(vpu_dev->dev, "w4 init: code_base=0x%llx fw_size=%zu\n",
+		 (unsigned long long)code_base, size);
 
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		code_size = WAVE420L_MAX_CODE_BUF_SIZE;
-	else if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code))
-		code_size = WAVE515_MAX_CODE_BUF_SIZE;
-	else
-		code_size = WAVE521_MAX_CODE_BUF_SIZE;
+	code_size = WAVE420L_MAX_CODE_BUF_SIZE;
 
 	/* ALIGN TO 4KB */
 	code_size &= ~0xfff;
-	code_bytes_required = size * 2;
-	/*
-	 * Wave420L firmware blobs are already byte-addressed in Linux
-	 * firmware loading flow (monet.bin), unlike the BSP API word-count.
-	 */
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		code_bytes_required = size;
+	code_bytes_required = size;
 	if (code_size < code_bytes_required)
 		return -EINVAL;
-
-	temp_base = code_base + code_size;
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		temp_size = WAVE420L_TEMPBUF_SIZE;
-	else
-		temp_size = WAVE5_TEMPBUF_SIZE;
 
 	ret = wave5_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
 	if (ret < 0) {
@@ -695,27 +670,21 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 
 	vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
 
-	if (vpu_dev->product_code == WAVE420L_CODE) {
-		/*
-		 * Match BSP init sequence: reset all VPU blocks before
-		 * programming the Wave4 command window.
-		 */
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
-		if (ret) {
-			vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
-			dev_err(vpu_dev->dev, "VPU init(W4 reset-all) timeout\n");
-			return ret;
-		}
+	vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
+	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
+	if (ret) {
 		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+		dev_err(vpu_dev->dev, "VPU init(W4 reset-all) timeout\n");
+		return ret;
 	}
+	vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
 
 	/* clear registers */
 
 	for (i = W5_CMD_REG_BASE; i < W5_CMD_REG_END; i += 4)
 		vpu_write_reg(vpu_dev, i, 0x00);
 
-	if (vpu_dev->product_code == WAVE420L_CODE) {
+	{
 		u32 remap_size = (code_size >> 12) & 0x1ff;
 
 		reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
@@ -728,78 +697,26 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 		vpu_write_reg(vpu_dev, W4_CODE_PARAM, 0);
 		vpu_write_reg(vpu_dev, W4_TIMEOUT_CNT, 0xffffffff);
 		vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
-	} else {
-		remap_page(vpu_dev, code_base, W5_REMAP_INDEX0);
-		remap_page(vpu_dev, code_base, W5_REMAP_INDEX1);
-
-		vpu_write_reg(vpu_dev, W5_ADDR_CODE_BASE, code_base);
-		vpu_write_reg(vpu_dev, W5_CODE_SIZE, code_size);
-		vpu_write_reg(vpu_dev, W5_CODE_PARAM, (WAVE5_UPPER_PROC_AXI_ID << 4) | 0);
-		vpu_write_reg(vpu_dev, W5_ADDR_TEMP_BASE, temp_base);
-		vpu_write_reg(vpu_dev, W5_TEMP_SIZE, temp_size);
-
-		/* These register must be reset explicitly */
-		vpu_write_reg(vpu_dev, W5_HW_OPTION, 0);
-
-		if (!PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_PROC_EXT_ADDR, 0);
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_AXI_PARAM, 0);
-			vpu_write_reg(vpu_dev, W5_SEC_AXI_PARAM, 0);
-		}
-
-		reg_val = vpu_read_reg(vpu_dev, W5_VPU_RET_VPU_CONFIG0);
-		if (FIELD_GET(W521_FEATURE_BACKBONE, reg_val)) {
-			reg_val = ((WAVE5_PROC_AXI_ID << 28) |
-				   (WAVE5_PRP_AXI_ID << 24) |
-				   (WAVE5_FBD_Y_AXI_ID << 20) |
-				   (WAVE5_FBC_Y_AXI_ID << 16) |
-				   (WAVE5_FBD_C_AXI_ID << 12) |
-				   (WAVE5_FBC_C_AXI_ID << 8) |
-				   (WAVE5_PRI_AXI_ID << 4) |
-				   WAVE5_SEC_AXI_ID);
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_PROG_AXI_ID, reg_val);
-		}
-
-		if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-			dma_addr_t task_buf_base;
-
-			vpu_write_reg(vpu_dev, W5_CMD_INIT_NUM_TASK_BUF, WAVE515_COMMAND_QUEUE_DEPTH);
-			vpu_write_reg(vpu_dev, W5_CMD_INIT_TASK_BUF_SIZE, WAVE515_ONE_TASKBUF_SIZE);
-
-			for (i = 0; i < WAVE515_COMMAND_QUEUE_DEPTH; i++) {
-				task_buf_base = temp_base + temp_size +
-						(i * WAVE515_ONE_TASKBUF_SIZE);
-				vpu_write_reg(vpu_dev,
-					      W5_CMD_INIT_ADDR_TASK_BUF0 + (i * 4),
-					      task_buf_base);
-			}
-
-			vpu_write_reg(vpu_dev, W515_CMD_ADDR_SEC_AXI, vpu_dev->sram_buf.daddr);
-			vpu_write_reg(vpu_dev, W515_CMD_SEC_AXI_SIZE, vpu_dev->sram_buf.size);
-		}
 	}
 
 	setup_wave5_interrupts(vpu_dev);
 
-	if (vpu_dev->product_code == WAVE420L_CODE) {
-		vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
-		vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
-		vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
-	}
+	vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
+	vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
+	vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
 	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
 	vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+	vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
 	vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
 	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
 	if (ret) {
 		u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
 
 		dev_err(vpu_dev->dev, "VPU init(W5_VPU_REMAP_CORE_START) timeout\n");
-		if (vpu_dev->product_code == WAVE420L_CODE && vcpu_pc) {
+		if (vcpu_pc) {
 			dev_warn(vpu_dev->dev,
-				 "wave420l init timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
+				 "w4 init timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 				 vcpu_pc);
 			vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
 			ret = setup_wave5_properties(dev);
@@ -807,19 +724,17 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 				vpu_dev->fw_running = true;
 			return ret;
 		}
-		if (vpu_dev->product_code == WAVE420L_CODE) {
-			dev_err(vpu_dev->dev,
-				"wave420l init timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-				vpu_read_reg(vpu_dev, W5_COMMAND),
-				vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
-				vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
-				vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
-				vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
-				vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-				vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
-				vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
-				vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
-		}
+		dev_err(vpu_dev->dev,
+			"w4 init timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
+			vpu_read_reg(vpu_dev, W5_COMMAND),
+			vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
+			vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
+			vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
+			vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
+			vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
+			vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
+			vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
+			vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
 		return ret;
 	}
 
@@ -840,6 +755,12 @@ int wave5_vpu_build_up_dec_param(struct vpu_instance *inst,
 	int ret;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	struct vpu_device *vpu_dev = inst->dev;
+	static const size_t w4_workbuf_fallback[] = {
+		WAVE420LDEC_WORKBUF_SIZE,
+		2 * 1024 * 1024,
+		1 * 1024 * 1024,
+	};
+	unsigned int i;
 
 	p_dec_info->cycle_per_tick = 256;
 	if (vpu_dev->sram_buf.size) {
@@ -858,85 +779,39 @@ int wave5_vpu_build_up_dec_param(struct vpu_instance *inst,
 		return -EINVAL;
 	}
 
-	if (vpu_dev->product == PRODUCT_ID_420L) {
-		static const size_t w420l_workbuf_fallback[] = {
-			WAVE420LDEC_WORKBUF_SIZE,
-			2 * 1024 * 1024,
-			1 * 1024 * 1024,
-		};
-		unsigned int i;
-
-		ret = -ENOMEM;
-		for (i = 0; i < ARRAY_SIZE(w420l_workbuf_fallback); i++) {
-			p_dec_info->vb_work.size = w420l_workbuf_fallback[i];
-			ret = wave5_vdi_allocate_dma_memory(inst->dev, &p_dec_info->vb_work);
-			if (!ret)
-				break;
-		}
-		if (ret)
-			return ret;
-		if (p_dec_info->vb_work.size != WAVE420LDEC_WORKBUF_SIZE)
-			dev_warn(vpu_dev->dev,
-				 "wave420l: reduced decoder workbuf to %zu bytes due contiguous allocation pressure\n",
-				 p_dec_info->vb_work.size);
-	} else if (vpu_dev->product == PRODUCT_ID_515) {
-		p_dec_info->vb_work.size = WAVE515DEC_WORKBUF_SIZE;
+	ret = -ENOMEM;
+	for (i = 0; i < ARRAY_SIZE(w4_workbuf_fallback); i++) {
+		p_dec_info->vb_work.size = w4_workbuf_fallback[i];
 		ret = wave5_vdi_allocate_dma_memory(inst->dev, &p_dec_info->vb_work);
-		if (ret)
-			return ret;
-	} else {
-		p_dec_info->vb_work.size = WAVE521DEC_WORKBUF_SIZE;
-		ret = wave5_vdi_allocate_dma_memory(inst->dev, &p_dec_info->vb_work);
-		if (ret)
-			return ret;
+		if (!ret)
+			break;
 	}
-
-	if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code))
-		vpu_write_reg(inst->dev, W5_CMD_DEC_VCORE_INFO, 1);
+	if (ret)
+		return ret;
+	if (p_dec_info->vb_work.size != WAVE420LDEC_WORKBUF_SIZE)
+		dev_warn(vpu_dev->dev,
+			 "w4: reduced decoder workbuf to %zu bytes due contiguous allocation pressure\n",
+			 p_dec_info->vb_work.size);
 
 	wave5_vdi_clear_memory(inst->dev, &p_dec_info->vb_work);
+	/*
+	 * Wave4 keeps the CREATE_INSTANCE work-buffer programming in
+	 * this command window.
+	 */
+	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_dec_info->vb_work.daddr);
+	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_dec_info->vb_work.size);
+	vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 
-	if (vpu_dev->product == PRODUCT_ID_420L) {
+	/*
+	 * Follow Wave4 flow and require RET_SUCCESS after CREATE_INSTANCE.
+	 */
+	{
 		u32 fail_res = 0;
 
-		/*
-		 * Wave420L keeps Wave4 register layout for CREATE_INSTANCE
-		 * work-buffer programming.
-		 */
-		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_dec_info->vb_work.daddr);
-		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_dec_info->vb_work.size);
-		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
-
-		/*
-		 * Follow Wave4 flow and require RET_SUCCESS after CREATE_INSTANCE.
-		 */
 		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, &fail_res);
 		if (ret)
-			dev_warn(inst->dev->dev, "wave420l dec create_instance failed: %d (fail=0x%x)\n",
+			dev_warn(inst->dev->dev, "w4 dec create_instance failed: %d (fail=0x%x)\n",
 				 ret, fail_res);
-	} else {
-		vpu_write_reg(inst->dev, W5_ADDR_WORK_BASE, p_dec_info->vb_work.daddr);
-		vpu_write_reg(inst->dev, W5_WORK_SIZE, p_dec_info->vb_work.size);
-
-		if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code)) {
-			vpu_write_reg(inst->dev, W5_CMD_ADDR_SEC_AXI, vpu_dev->sram_buf.daddr);
-			vpu_write_reg(inst->dev, W5_CMD_SEC_AXI_SIZE, vpu_dev->sram_buf.size);
-		}
-
-		vpu_write_reg(inst->dev, W5_CMD_DEC_BS_START_ADDR, p_dec_info->stream_buf_start_addr);
-		vpu_write_reg(inst->dev, W5_CMD_DEC_BS_SIZE, p_dec_info->stream_buf_size);
-
-		/* NOTE: SDMA reads MSB first */
-		vpu_write_reg(inst->dev, W5_CMD_BS_PARAM, BITSTREAM_ENDIANNESS_BIG_ENDIAN);
-
-		if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code)) {
-			/* This register must be reset explicitly */
-			vpu_write_reg(inst->dev, W5_CMD_EXT_ADDR, 0);
-			vpu_write_reg(inst->dev, W5_CMD_NUM_CQ_DEPTH_M1,
-				      WAVE521_COMMAND_QUEUE_DEPTH - 1);
-		}
-		vpu_write_reg(inst->dev, W5_CMD_ERR_CONCEAL, 0);
-		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, NULL);
 	}
 	if (ret) {
 		wave5_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
@@ -1484,8 +1359,8 @@ int wave5_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *
 int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 {
 	struct vpu_buf *common_vb;
-	dma_addr_t code_base, temp_base;
-	dma_addr_t old_code_base, expected_code_base, temp_size;
+	dma_addr_t code_base;
+	dma_addr_t old_code_base, expected_code_base;
 	u32 code_size, reason_code;
 	size_t code_bytes_required;
 	u32 reg_val;
@@ -1496,43 +1371,23 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 
 	code_base = common_vb->daddr;
 
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		code_size = WAVE420L_MAX_CODE_BUF_SIZE;
-	else if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code))
-		code_size = WAVE515_MAX_CODE_BUF_SIZE;
-	else
-		code_size = WAVE521_MAX_CODE_BUF_SIZE;
+	code_size = WAVE420L_MAX_CODE_BUF_SIZE;
 
 	/* ALIGN TO 4KB */
 	code_size &= ~0xfff;
-	code_bytes_required = size * 2;
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		code_bytes_required = size;
+	code_bytes_required = size;
 	if (code_size < code_bytes_required)
 		return -EINVAL;
 
-	temp_base = code_base + code_size;
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		temp_size = WAVE420L_TEMPBUF_SIZE;
-	else
-		temp_size = WAVE5_TEMPBUF_SIZE;
-
 	old_code_base = vpu_read_reg(vpu_dev, W5_VPU_REMAP_PADDR);
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		expected_code_base = code_base;
-	else
-		expected_code_base = code_base + W5_REMAP_INDEX1 * W5_REMAP_MAX_SIZE;
-
-	if (vpu_dev->product_code == WAVE420L_CODE)
-		dev_info(vpu_dev->dev,
-			 "wave420l reinit: remap old=0x%llx expected=0x%llx code_base=0x%llx fw_size=%zu\n",
-			 (unsigned long long)old_code_base,
-			 (unsigned long long)expected_code_base,
-			 (unsigned long long)code_base, size);
+	expected_code_base = code_base;
+	dev_info(vpu_dev->dev,
+		 "w4 reinit: remap old=0x%llx expected=0x%llx code_base=0x%llx fw_size=%zu\n",
+		 (unsigned long long)old_code_base,
+		 (unsigned long long)expected_code_base,
+		 (unsigned long long)code_base, size);
 
 	if (old_code_base != expected_code_base) {
-		int ret;
-
 		ret = wave5_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
 		if (ret < 0) {
 			dev_err(vpu_dev->dev,
@@ -1542,47 +1397,38 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 
 		vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
 
-		if (vpu_dev->product_code == WAVE420L_CODE) {
-			/*
-			 * Match Wave4 BSP reset ordering: gate GDI transactions before
-			 * asserting reset, then release GDI bus control afterwards.
-			 */
-			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x100);
-			ret = wave5_wait_bus_busy(vpu_dev, W5_GDI_BUS_STATUS);
-			if (ret) {
-				wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
-				dev_err(vpu_dev->dev, "VPU reinit(W4 gdi bus idle) timeout\n");
-				return ret;
-			}
+		/*
+		 * Match Wave4 BSP reset ordering: gate GDI transactions before
+		 * asserting reset, then release GDI bus control afterwards.
+		 */
+		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x100);
+		ret = wave5_wait_bus_busy(vpu_dev, W5_GDI_BUS_STATUS);
+		if (ret) {
+			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+			dev_err(vpu_dev->dev, "VPU reinit(W4 gdi bus idle) timeout\n");
+			return ret;
+		}
 
-			/*
-			 * Follow Wave4 BSP path: assert full block reset directly
-			 * before remap/INIT_VPU programming.
-			 */
-			vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
-			ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
-			if (ret) {
-				vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
-				wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
-				dev_err(vpu_dev->dev, "VPU reinit(W4 reset-all) timeout\n");
-				return ret;
-			}
+		/*
+		 * Follow Wave4 BSP path: assert full block reset directly
+		 * before remap/INIT_VPU programming.
+		 */
+		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
+		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
+		if (ret) {
 			vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
 			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
-		} else {
-			ret = wave5_vpu_reset(dev, SW_RESET_ON_BOOT);
-			if (ret < 0) {
-				dev_err(vpu_dev->dev, "VPU init, Resetting the VPU, fail: %d\n",
-					ret);
-				return ret;
-			}
+			dev_err(vpu_dev->dev, "VPU reinit(W4 reset-all) timeout\n");
+			return ret;
 		}
+		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
 
 		/* clear command window registers */
 		for (reg_val = W5_CMD_REG_BASE; reg_val < W5_CMD_REG_END; reg_val += 4)
 			vpu_write_reg(vpu_dev, reg_val, 0x00);
 
-		if (vpu_dev->product_code == WAVE420L_CODE) {
+		{
 			u32 remap_size = (code_size >> 12) & 0x1ff;
 
 			reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
@@ -1595,84 +1441,26 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 			vpu_write_reg(vpu_dev, W4_CODE_PARAM, 0);
 			vpu_write_reg(vpu_dev, W4_TIMEOUT_CNT, 0xffffffff);
 			vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
-		} else {
-			remap_page(vpu_dev, code_base, W5_REMAP_INDEX0);
-			remap_page(vpu_dev, code_base, W5_REMAP_INDEX1);
-
-			vpu_write_reg(vpu_dev, W5_ADDR_CODE_BASE, code_base);
-			vpu_write_reg(vpu_dev, W5_CODE_SIZE, code_size);
-			vpu_write_reg(vpu_dev, W5_CODE_PARAM, (WAVE5_UPPER_PROC_AXI_ID << 4) | 0);
-			vpu_write_reg(vpu_dev, W5_ADDR_TEMP_BASE, temp_base);
-			vpu_write_reg(vpu_dev, W5_TEMP_SIZE, temp_size);
-
-			/* These register must be reset explicitly */
-			vpu_write_reg(vpu_dev, W5_HW_OPTION, 0);
-
-			if (!PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_PROC_EXT_ADDR, 0);
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_AXI_PARAM, 0);
-				vpu_write_reg(vpu_dev, W5_SEC_AXI_PARAM, 0);
-			}
-
-			reg_val = vpu_read_reg(vpu_dev, W5_VPU_RET_VPU_CONFIG0);
-			if (FIELD_GET(W521_FEATURE_BACKBONE, reg_val)) {
-				reg_val = ((WAVE5_PROC_AXI_ID << 28) |
-						(WAVE5_PRP_AXI_ID << 24) |
-						(WAVE5_FBD_Y_AXI_ID << 20) |
-						(WAVE5_FBC_Y_AXI_ID << 16) |
-						(WAVE5_FBD_C_AXI_ID << 12) |
-						(WAVE5_FBC_C_AXI_ID << 8) |
-						(WAVE5_PRI_AXI_ID << 4) |
-						WAVE5_SEC_AXI_ID);
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_PROG_AXI_ID, reg_val);
-			}
-
-			if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-				dma_addr_t task_buf_base;
-				u32 i;
-
-				vpu_write_reg(vpu_dev, W5_CMD_INIT_NUM_TASK_BUF,
-					      WAVE515_COMMAND_QUEUE_DEPTH);
-				vpu_write_reg(vpu_dev, W5_CMD_INIT_TASK_BUF_SIZE,
-					      WAVE515_ONE_TASKBUF_SIZE);
-
-				for (i = 0; i < WAVE515_COMMAND_QUEUE_DEPTH; i++) {
-					task_buf_base = temp_base + temp_size +
-							(i * WAVE515_ONE_TASKBUF_SIZE);
-					vpu_write_reg(vpu_dev,
-						      W5_CMD_INIT_ADDR_TASK_BUF0 + (i * 4),
-						      task_buf_base);
-				}
-
-				vpu_write_reg(vpu_dev, W515_CMD_ADDR_SEC_AXI,
-					      vpu_dev->sram_buf.daddr);
-				vpu_write_reg(vpu_dev, W515_CMD_SEC_AXI_SIZE,
-					      vpu_dev->sram_buf.size);
-			}
 		}
 
-			setup_wave5_interrupts(vpu_dev);
+		setup_wave5_interrupts(vpu_dev);
+		vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
+		vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
+		vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
-			if (vpu_dev->product_code == WAVE420L_CODE) {
-				vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
-				vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
-				vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
-			}
-
-			vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-			vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-			if (vpu_dev->product_code == WAVE420L_CODE)
-				vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
-			vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
+		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
+		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
+		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
 
 		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
 		if (ret) {
 			u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
 
 			dev_err(vpu_dev->dev, "VPU reinit(W5_VPU_REMAP_CORE_START) timeout\n");
-			if (vpu_dev->product_code == WAVE420L_CODE && vcpu_pc) {
+			if (vcpu_pc) {
 				dev_warn(vpu_dev->dev,
-					 "wave420l reinit timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
+					 "w4 reinit timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 					 vcpu_pc);
 				vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
 				ret = setup_wave5_properties(dev);
@@ -1680,19 +1468,17 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 					vpu_dev->fw_running = true;
 				return ret;
 			}
-			if (vpu_dev->product_code == WAVE420L_CODE) {
-				dev_err(vpu_dev->dev,
-					"wave420l reinit timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-					vpu_read_reg(vpu_dev, W5_COMMAND),
-					vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
-					vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
-					vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
-					vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
-					vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-					vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
-					vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
-					vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
-			}
+			dev_err(vpu_dev->dev,
+				"w4 reinit timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
+				vpu_read_reg(vpu_dev, W5_COMMAND),
+				vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
+				vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
+				vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
+				vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
+				vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
+				vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
+				vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
+				vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
 			return ret;
 		}
 
@@ -1711,12 +1497,14 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 int wave5_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
 			 size_t size)
 {
-	u32 reg_val;
+	u32 reg_val, remap_size;
 	struct vpu_buf *common_vb;
-	dma_addr_t code_base, temp_base;
-	u32 code_size, temp_size, reason_code;
+	dma_addr_t code_base;
+	u32 code_size, reason_code;
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	int ret;
+
+	(void)code;
 
 	if (i_sleep_wake) {
 		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
@@ -1744,91 +1532,38 @@ int wave5_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 		common_vb = &vpu_dev->common_mem;
 
 		code_base = common_vb->daddr;
-
-		if (vpu_dev->product_code == WAVE420L_CODE)
-			code_size = WAVE420L_MAX_CODE_BUF_SIZE;
-		else if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code))
-			code_size = WAVE515_MAX_CODE_BUF_SIZE;
-		else
-			code_size = WAVE521_MAX_CODE_BUF_SIZE;
+		code_size = WAVE420L_MAX_CODE_BUF_SIZE;
 
 		/* ALIGN TO 4KB */
 		code_size &= ~0xfff;
-		if (vpu_dev->product_code == WAVE420L_CODE) {
-			if (code_size < size) {
-				dev_err(dev, "size too small\n");
-				return -EINVAL;
-			}
-		} else if (code_size < size * 2) {
+		if (code_size < size) {
 			dev_err(dev, "size too small\n");
 			return -EINVAL;
 		}
 
-		temp_base = code_base + code_size;
-		if (vpu_dev->product_code == WAVE420L_CODE)
-			temp_size = WAVE420L_TEMPBUF_SIZE;
-		else
-			temp_size = WAVE5_TEMPBUF_SIZE;
-
 		/* Power on without DEBUG mode */
 		vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
 
-		remap_page(vpu_dev, code_base, W5_REMAP_INDEX0);
-		remap_page(vpu_dev, code_base, W5_REMAP_INDEX1);
+		remap_size = (code_size >> 12) & 0x1ff;
+		reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
+		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CTRL, reg_val);
+		vpu_write_reg(vpu_dev, W5_VPU_REMAP_VADDR, 0x00000000);
+		vpu_write_reg(vpu_dev, W5_VPU_REMAP_PADDR, code_base);
 
-		vpu_write_reg(vpu_dev, W5_ADDR_CODE_BASE, code_base);
-		vpu_write_reg(vpu_dev, W5_CODE_SIZE, code_size);
-		vpu_write_reg(vpu_dev, W5_CODE_PARAM, (WAVE5_UPPER_PROC_AXI_ID << 4) | 0);
-
-		/* These register must be reset explicitly */
-		vpu_write_reg(vpu_dev, W5_HW_OPTION, 0);
-
-		if (!PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_PROC_EXT_ADDR, 0);
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_AXI_PARAM, 0);
-			vpu_write_reg(vpu_dev, W5_SEC_AXI_PARAM, 0);
-		}
+		vpu_write_reg(vpu_dev, W4_ADDR_CODE_BASE, code_base);
+		vpu_write_reg(vpu_dev, W4_CODE_SIZE, code_size);
+		vpu_write_reg(vpu_dev, W4_CODE_PARAM, 0);
+		vpu_write_reg(vpu_dev, W4_TIMEOUT_CNT, 0xffffffff);
+		vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
 
 		setup_wave5_interrupts(vpu_dev);
-
-		reg_val = vpu_read_reg(vpu_dev, W5_VPU_RET_VPU_CONFIG0);
-		if (FIELD_GET(W521_FEATURE_BACKBONE, reg_val)) {
-			reg_val = ((WAVE5_PROC_AXI_ID << 28) |
-					(WAVE5_PRP_AXI_ID << 24) |
-					(WAVE5_FBD_Y_AXI_ID << 20) |
-					(WAVE5_FBC_Y_AXI_ID << 16) |
-					(WAVE5_FBD_C_AXI_ID << 12) |
-					(WAVE5_FBC_C_AXI_ID << 8) |
-					(WAVE5_PRI_AXI_ID << 4) |
-					WAVE5_SEC_AXI_ID);
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_PROG_AXI_ID, reg_val);
-		}
-
-		if (PRODUCT_CODE_WAVE515_FAMILY(vpu_dev->product_code)) {
-			dma_addr_t task_buf_base;
-			u32 i;
-
-			vpu_write_reg(vpu_dev, W5_CMD_INIT_NUM_TASK_BUF,
-				      WAVE515_COMMAND_QUEUE_DEPTH);
-			vpu_write_reg(vpu_dev, W5_CMD_INIT_TASK_BUF_SIZE,
-				      WAVE515_ONE_TASKBUF_SIZE);
-
-			for (i = 0; i < WAVE515_COMMAND_QUEUE_DEPTH; i++) {
-				task_buf_base = temp_base + temp_size +
-						(i * WAVE515_ONE_TASKBUF_SIZE);
-				vpu_write_reg(vpu_dev,
-					      W5_CMD_INIT_ADDR_TASK_BUF0 + (i * 4),
-					      task_buf_base);
-			}
-
-			vpu_write_reg(vpu_dev, W515_CMD_ADDR_SEC_AXI,
-				      vpu_dev->sram_buf.daddr);
-			vpu_write_reg(vpu_dev, W515_CMD_SEC_AXI_SIZE,
-				      vpu_dev->sram_buf.size);
-		}
+		vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
+		vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
+		vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
 		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
 		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_WAKEUP_VPU));
+		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
 		/* Start VPU after settings */
 		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
 
@@ -2243,7 +1978,7 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 	wave5_set_enc_crop_info(inst->std, p_param, rot_mir_mode, p_open_param->pic_width,
 				p_open_param->pic_height);
 
-	if (inst->dev->product_code == WAVE420L_CODE) {
+	{
 		u32 src_width, src_height, frame_rate = 0, sec_axi, chroma_format_idc;
 		dma_addr_t temp_base;
 		bool rc_enabled = p_open_param->rc_enable;
@@ -2368,13 +2103,13 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 		vpu_write_reg(inst->dev, W4_CMD_ENC_TIME_SCALE, 0);
 		vpu_write_reg(inst->dev, W4_CMD_ENC_NUM_TICKS_POC_DIFF_ONE, 0);
 
-		reg_val = send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
-		if (reg_val) {
-			dev_warn(inst->dev->dev,
-				 "wave420l enc set_param failed (%d): fail=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x rc=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] work=[0x%x+0x%x] temp=[0x%x+0x%x] sec_axi=[0x%x+0x%x use=0x%x] pc=0x%x busy=0x%x host_int=0x%x\n",
-				 reg_val,
-				 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-				 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+			reg_val = send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
+			if (reg_val) {
+				dev_warn(inst->dev->dev,
+					 "w4 enc set_param failed (%d): fail=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x rc=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] work=[0x%x+0x%x] temp=[0x%x+0x%x] sec_axi=[0x%x+0x%x use=0x%x] pc=0x%x busy=0x%x host_int=0x%x\n",
+					 reg_val,
+					 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
+					 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
 				 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
 				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
 				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_PIC_PARAM),
@@ -2533,93 +2268,56 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_VUI_HRD_PARAM, 0);
 
 	/*
-	 * Wave420L follows the Wave4 flow: SET_PARAM completion/status is
-	 * latched on command interrupt and consumed in enc_get_seq_info().
+	 * Wave4 SET_PARAM completion/status is latched on command interrupt
+	 * and consumed in enc_get_seq_info().
 	 * Avoid early RET_SUCCESS checks here.
 	 */
-	if (inst->dev->product_code == WAVE420L_CODE)
-		return send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
-
-	return send_firmware_command(inst, W5_ENC_SET_PARAM, true, NULL, NULL);
+	return send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
 }
 
 int wave5_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info)
 {
-	int ret;
-	u32 reg_val;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
-	if (inst->dev->product_code == WAVE420L_CODE) {
-		if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
-			info->seq_init_err_reason = vpu_read_reg(inst->dev,
-								 W4_RET_FAIL_REASON);
-			dev_warn(inst->dev->dev,
-				 "wave420l enc seq_info failed: fail=0x%x pc=0x%x busy=0x%x host_int=0x%x vint_sts=0x%x vint_reason=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x gop=0x%x rc=0x%x enc=0x%x minmax=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] sec_axi=[0x%x+0x%x use=0x%x]\n",
-				 info->seq_init_err_reason,
-				 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC),
-				 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-				 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
-				 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
-				 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
-				 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_PIC_PARAM),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_GOP_PARAM),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_PARAM),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_PARAM),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_MIN_MAX_QP),
-				 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-				 vpu_read_reg(inst->dev, W4_BS_SIZE),
-				 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-				 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-				 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
-				 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
-				 vpu_read_reg(inst->dev, W4_USE_SEC_AXI));
-			return -EIO;
-		}
-
-		info->warn_info = 0;
-		info->min_frame_buffer_count = vpu_read_reg(inst->dev,
-							    W4_RET_ENC_MIN_FB_NUM);
-		info->min_src_frame_count = vpu_read_reg(inst->dev,
-							 W4_RET_ENC_MIN_SRC_BUF_NUM);
-		info->vlc_buf_size = 0;
-		info->param_buf_size = 0;
-		p_enc_info->vlc_buf_size = 0;
-		p_enc_info->param_buf_size = 0;
-		p_enc_info->instance_queue_count = 0;
-		p_enc_info->report_queue_count = 0;
-		return 0;
+	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
+		info->seq_init_err_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
+		dev_warn(inst->dev->dev,
+			 "w4 enc seq_info failed: fail=0x%x pc=0x%x busy=0x%x host_int=0x%x vint_sts=0x%x vint_reason=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x gop=0x%x rc=0x%x enc=0x%x minmax=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] sec_axi=[0x%x+0x%x use=0x%x]\n",
+			 info->seq_init_err_reason,
+			 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC),
+			 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
+			 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
+			 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
+			 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
+			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_PIC_PARAM),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_GOP_PARAM),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_PARAM),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_PARAM),
+			 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_MIN_MAX_QP),
+			 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
+			 vpu_read_reg(inst->dev, W4_BS_SIZE),
+			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+			 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
+			 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
+			 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
+			 vpu_read_reg(inst->dev, W4_USE_SEC_AXI));
+		return -EIO;
 	}
 
-	/* send QUERY cmd */
-	ret = wave5_send_query(inst->dev, inst, GET_RESULT);
-	if (ret)
-		return ret;
+	info->warn_info = 0;
+	info->min_frame_buffer_count = vpu_read_reg(inst->dev, W4_RET_ENC_MIN_FB_NUM);
+	info->min_src_frame_count = vpu_read_reg(inst->dev, W4_RET_ENC_MIN_SRC_BUF_NUM);
+	info->vlc_buf_size = 0;
+	info->param_buf_size = 0;
+	p_enc_info->vlc_buf_size = 0;
+	p_enc_info->param_buf_size = 0;
+	p_enc_info->instance_queue_count = 0;
+	p_enc_info->report_queue_count = 0;
 
-	dev_dbg(inst->dev->dev, "%s: init seq\n", __func__);
-
-	reg_val = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
-
-	p_enc_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_enc_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
-
-	if (vpu_read_reg(inst->dev, W5_RET_ENC_ENCODING_SUCCESS) != 1) {
-		info->seq_init_err_reason = vpu_read_reg(inst->dev, W5_RET_ENC_ERR_INFO);
-		ret = -EIO;
-	} else {
-		info->warn_info = vpu_read_reg(inst->dev, W5_RET_ENC_WARN_INFO);
-	}
-
-	info->min_frame_buffer_count = vpu_read_reg(inst->dev, W5_RET_ENC_NUM_REQUIRED_FB);
-	info->min_src_frame_count = vpu_read_reg(inst->dev, W5_RET_ENC_MIN_SRC_BUF_NUM);
-	info->vlc_buf_size = vpu_read_reg(inst->dev, W5_RET_VLC_BUF_SIZE);
-	info->param_buf_size = vpu_read_reg(inst->dev, W5_RET_PARAM_BUF_SIZE);
-	p_enc_info->vlc_buf_size = info->vlc_buf_size;
-	p_enc_info->param_buf_size = info->param_buf_size;
-
-	return ret;
+	return 0;
 }
 
 static u32 calculate_luma_stride(u32 width, u32 bit_depth)
