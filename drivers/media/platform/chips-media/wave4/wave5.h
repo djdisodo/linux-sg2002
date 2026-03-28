@@ -54,24 +54,24 @@
 #define MIR_VER_FLIP		0x9
 #define MIR_HOR_VER_FLIP	(MIR_HOR_FLIP | MIR_VER_FLIP)
 
-bool wave5_vpu_is_init(struct vpu_device *vpu_dev);
+bool wave4_vpu_is_init(struct vpu_device *vpu_dev);
 
 unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev);
 
-int wave5_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision);
+int wave4_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision);
 
 int wave4_vpu_init(struct device *dev, u8 *fw, size_t size);
 
 int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *code,
 			 size_t size);
 
-int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode);
+int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode);
 
 int wave4_vpu_build_up_dec_param(struct vpu_instance *inst, struct dec_open_param *param);
 
-int wave5_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos);
+int wave4_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos);
 
-int wave5_vpu_hw_flush_instance(struct vpu_instance *inst);
+int wave4_vpu_hw_flush_instance(struct vpu_instance *inst);
 
 int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst,
 				       struct frame_buffer *fb_arr, enum tiled_map_type map_type,
@@ -93,7 +93,7 @@ int wave4_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index);
 
 int wave4_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index);
 
-int wave5_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags);
+int wave4_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags);
 
 dma_addr_t wave4_dec_get_rd_ptr(struct vpu_instance *inst);
 

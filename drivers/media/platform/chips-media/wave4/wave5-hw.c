@@ -352,7 +352,7 @@ static int wave5_wait_vcpu_bus_busy(struct vpu_device *vpu_dev, unsigned int add
 	return wave5_wait_fio_readl(vpu_dev, addr, 0);
 }
 
-bool wave5_vpu_is_init(struct vpu_device *vpu_dev)
+bool wave4_vpu_is_init(struct vpu_device *vpu_dev)
 {
 	/*
 	 * On some Wave420L integrations the current PC register may read as 0
@@ -612,7 +612,7 @@ static int setup_wave5_properties(struct device *dev)
 	return 0;
 }
 
-int wave5_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision)
+int wave4_vpu_get_version(struct vpu_device *vpu_dev, u32 *revision)
 {
 	int ret;
 
@@ -808,7 +808,7 @@ int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 	return 0;
 }
 
-int wave5_vpu_hw_flush_instance(struct vpu_instance *inst)
+int wave4_vpu_hw_flush_instance(struct vpu_instance *inst)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	u32 instance_queue_count, report_queue_count;
@@ -1529,7 +1529,7 @@ int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 	return 0;
 }
 
-int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
+int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 {
 	u32 val = 0;
 	int ret = 0;
@@ -1643,7 +1643,7 @@ int wave4_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res)
 	return send_firmware_command(inst, W5_DESTROY_INSTANCE, true, NULL, fail_res);
 }
 
-int wave5_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
+int wave4_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
@@ -1691,7 +1691,7 @@ int wave4_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index)
 	return 0;
 }
 
-int wave5_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags)
+int wave4_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags)
 {
 	u32 interrupt_reason;
 

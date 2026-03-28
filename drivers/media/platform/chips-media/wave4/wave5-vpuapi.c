@@ -24,7 +24,7 @@ static int wave5_initialize_vpu(struct device *dev, u8 *code, size_t size)
 	if (ret)
 		return ret;
 
-	if (wave5_vpu_is_init(vpu_dev)) {
+	if (wave4_vpu_is_init(vpu_dev)) {
 		/*
 		 * Some platforms may leave the VPU firmware running across resets.
 		 * Reinitialize in-place and propagate the real status instead of
@@ -34,7 +34,7 @@ static int wave5_initialize_vpu(struct device *dev, u8 *code, size_t size)
 		goto err_out;
 	}
 
-	ret = wave5_vpu_reset(dev, SW_RESET_ON_BOOT);
+	ret = wave4_vpu_reset(dev, SW_RESET_ON_BOOT);
 	if (ret)
 		goto err_out;
 
@@ -67,7 +67,7 @@ int wave4_vpu_flush_instance(struct vpu_instance *inst)
 		 * Repeat the FLUSH command until the firmware reports that the
 		 * VPU isn't running anymore
 		 */
-		ret = wave5_vpu_hw_flush_instance(inst);
+		ret = wave4_vpu_hw_flush_instance(inst);
 		if (ret < 0 && ret != -EBUSY) {
 			dev_warn(inst->dev->dev, "Flush of %s instance with id: %d fail: %d\n",
 				 inst->type == VPU_INST_TYPE_DEC ? "DECODER" : "ENCODER", inst->id,
@@ -111,14 +111,14 @@ int wave4_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *
 	if (ret)
 		return ret;
 
-	if (!wave5_vpu_is_init(vpu_dev)) {
+	if (!wave4_vpu_is_init(vpu_dev)) {
 		ret = -EINVAL;
 		goto err_out;
 	}
 
 	if (product_id)
 		*product_id = vpu_dev->product;
-	ret = wave5_vpu_get_version(vpu_dev, revision);
+	ret = wave4_vpu_get_version(vpu_dev, revision);
 
 err_out:
 	mutex_unlock(&vpu_dev->hw_lock);
@@ -166,7 +166,7 @@ int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_pa
 	if (ret)
 		return ret;
 
-	if (!wave5_vpu_is_init(vpu_dev)) {
+	if (!wave4_vpu_is_init(vpu_dev)) {
 		mutex_unlock(&vpu_dev->hw_lock);
 		return -ENODEV;
 	}
@@ -437,7 +437,7 @@ int wave5_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size
 	ret = mutex_lock_interruptible(&vpu_dev->hw_lock);
 	if (ret)
 		return ret;
-	ret = wave5_vpu_dec_set_bitstream_flag(inst, (size == 0));
+	ret = wave4_vpu_dec_set_bitstream_flag(inst, (size == 0));
 	mutex_unlock(&vpu_dev->hw_lock);
 
 	return ret;
@@ -720,7 +720,7 @@ int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_pa
 	if (ret)
 		return ret;
 
-	if (!wave5_vpu_is_init(vpu_dev)) {
+	if (!wave4_vpu_is_init(vpu_dev)) {
 		mutex_unlock(&vpu_dev->hw_lock);
 		return -ENODEV;
 	}
