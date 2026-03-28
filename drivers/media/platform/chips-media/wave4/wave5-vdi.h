@@ -29,7 +29,7 @@ struct vpu_buf {
 	void *vaddr;
 };
 
-int wave5_vdi_init(struct device *dev);
-int wave5_vdi_release(struct device *dev);	//this function may be called only at system off.
+int wave4_vdi_init(struct device *dev);
+int wave4_vdi_release(struct device *dev);	//this function may be called only at system off.
 
 #endif //#ifndef _VDI_H_

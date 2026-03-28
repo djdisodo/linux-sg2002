@@ -38,7 +38,7 @@ static int wave5_vdi_allocate_common_memory(struct device *dev)
 	return 0;
 }
 
-int wave5_vdi_init(struct device *dev)
+int wave4_vdi_init(struct device *dev)
 {
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	int ret;
@@ -67,7 +67,7 @@ int wave5_vdi_init(struct device *dev)
 	return 0;
 }
 
-int wave5_vdi_release(struct device *dev)
+int wave4_vdi_release(struct device *dev)
 {
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 

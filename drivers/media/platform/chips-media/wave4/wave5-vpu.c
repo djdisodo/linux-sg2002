@@ -564,9 +564,9 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	}
 
 	dev->product_code = wave5_vdi_read_register(dev, VPU_PRODUCT_CODE_REGISTER);
-	ret = wave5_vdi_init(&pdev->dev);
+	ret = wave4_vdi_init(&pdev->dev);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "wave5_vdi_init, fail: %d\n", ret);
+		dev_err(&pdev->dev, "wave4_vdi_init, fail: %d\n", ret);
 		goto err_clk_dis;
 	}
 	dev->product = wave5_vpu_get_product_id(dev);
@@ -658,7 +658,7 @@ err_vdi_release:
 		up(&dev->irq_sem);
 		dev->irq_thread = NULL;
 	}
-	wave5_vdi_release(&pdev->dev);
+	wave4_vdi_release(&pdev->dev);
 err_clk_dis:
 	clk_bulk_disable_unprepare(dev->num_clks, dev->clks);
 err_reset_assert:
@@ -695,7 +695,7 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 	mutex_destroy(&dev->irq_lock);
 	reset_control_assert(dev->resets);
 	clk_bulk_disable_unprepare(dev->num_clks, dev->clks);
-	wave5_vdi_release(&pdev->dev);
+	wave4_vdi_release(&pdev->dev);
 	ida_destroy(&dev->inst_ida);
 }
 
