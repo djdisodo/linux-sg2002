@@ -109,3 +109,7 @@
 	dr_mode = "host";
 	status = "okay";
 };
+
+&vpu {
+	status = "okay";
+};
