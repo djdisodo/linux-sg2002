@@ -604,16 +604,16 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	}
 
 	if (match_data->flags & WAVE5_IS_DEC) {
-		ret = wave5_vpu_dec_register_device(dev);
+		ret = wave4_vpu_dec_register_device(dev);
 		if (ret) {
-			dev_err(&pdev->dev, "wave5_vpu_dec_register_device, fail: %d\n", ret);
+			dev_err(&pdev->dev, "wave4_vpu_dec_register_device, fail: %d\n", ret);
 			goto err_v4l2_unregister;
 		}
 	}
 	if (match_data->flags & WAVE5_IS_ENC) {
-		ret = wave5_vpu_enc_register_device(dev);
+		ret = wave4_vpu_enc_register_device(dev);
 		if (ret) {
-			dev_err(&pdev->dev, "wave5_vpu_enc_register_device, fail: %d\n", ret);
+			dev_err(&pdev->dev, "wave4_vpu_enc_register_device, fail: %d\n", ret);
 			goto err_dec_unreg;
 		}
 	}
@@ -643,10 +643,10 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 
 err_enc_unreg:
 	if (match_data->flags & WAVE5_IS_ENC)
-		wave5_vpu_enc_unregister_device(dev);
+		wave4_vpu_enc_unregister_device(dev);
 err_dec_unreg:
 	if (match_data->flags & WAVE5_IS_DEC)
-		wave5_vpu_dec_unregister_device(dev);
+		wave4_vpu_dec_unregister_device(dev);
 err_v4l2_unregister:
 	v4l2_device_unregister(&dev->v4l2_dev);
 err_irq_release:
@@ -671,8 +671,8 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 {
 	struct vpu_device *dev = dev_get_drvdata(&pdev->dev);
 
-	wave5_vpu_enc_unregister_device(dev);
-	wave5_vpu_dec_unregister_device(dev);
+	wave4_vpu_enc_unregister_device(dev);
+	wave4_vpu_dec_unregister_device(dev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 
 	if (dev->irq < 0) {

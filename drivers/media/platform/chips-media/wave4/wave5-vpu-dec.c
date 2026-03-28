@@ -1905,7 +1905,7 @@ static int wave5_vpu_open_dec(struct file *filp)
 
 	/*
 	 * For Wave515 SRAM memory was already allocated
-	 * at wave5_vpu_dec_register_device()
+	 * at wave4_vpu_dec_register_device()
 	 */
 	if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code))
 		wave5_vdi_allocate_sram(inst->dev);
@@ -1939,7 +1939,7 @@ static const struct v4l2_file_operations wave5_vpu_dec_fops = {
 	.mmap = v4l2_m2m_fop_mmap,
 };
 
-int wave5_vpu_dec_register_device(struct vpu_device *dev)
+int wave4_vpu_dec_register_device(struct vpu_device *dev)
 {
 	struct video_device *vdev_dec;
 	int ret;
@@ -1982,11 +1982,11 @@ int wave5_vpu_dec_register_device(struct vpu_device *dev)
 	return 0;
 }
 
-void wave5_vpu_dec_unregister_device(struct vpu_device *dev)
+void wave4_vpu_dec_unregister_device(struct vpu_device *dev)
 {
 	/*
 	 * Here is a freeing pair for Wave515 SRAM memory allocation
-	 * happened at wave5_vpu_dec_register_device().
+	 * happened at wave4_vpu_dec_register_device().
 	 */
 	if (PRODUCT_CODE_WAVE515_FAMILY(dev->product_code))
 		wave5_vdi_free_sram(dev);

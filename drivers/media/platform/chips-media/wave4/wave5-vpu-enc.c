@@ -1866,7 +1866,7 @@ static const struct v4l2_file_operations wave5_vpu_enc_fops = {
 	.mmap = v4l2_m2m_fop_mmap,
 };
 
-int wave5_vpu_enc_register_device(struct vpu_device *dev)
+int wave4_vpu_enc_register_device(struct vpu_device *dev)
 {
 	struct video_device *vdev_enc;
 	int ret;
@@ -1902,7 +1902,7 @@ int wave5_vpu_enc_register_device(struct vpu_device *dev)
 	return 0;
 }
 
-void wave5_vpu_enc_unregister_device(struct vpu_device *dev)
+void wave4_vpu_enc_unregister_device(struct vpu_device *dev)
 {
 	video_unregister_device(dev->video_dev_enc);
 	if (dev->v4l2_m2m_enc_dev)

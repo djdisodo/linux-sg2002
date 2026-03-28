@@ -68,10 +68,10 @@ static inline struct vpu_dst_buffer *wave5_to_vpu_dst_buf(struct vb2_v4l2_buffer
 
 int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout);
 
-int  wave5_vpu_dec_register_device(struct vpu_device *dev);
-void wave5_vpu_dec_unregister_device(struct vpu_device *dev);
-int  wave5_vpu_enc_register_device(struct vpu_device *dev);
-void wave5_vpu_enc_unregister_device(struct vpu_device *dev);
+int  wave4_vpu_dec_register_device(struct vpu_device *dev);
+void wave4_vpu_dec_unregister_device(struct vpu_device *dev);
+int  wave4_vpu_enc_register_device(struct vpu_device *dev);
+void wave4_vpu_enc_unregister_device(struct vpu_device *dev);
 static inline bool wave5_vpu_both_queues_are_streaming(struct vpu_instance *inst)
 {
 	struct vb2_queue *vq_cap =
