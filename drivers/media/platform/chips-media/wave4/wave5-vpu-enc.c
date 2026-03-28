@@ -399,7 +399,7 @@ static int wave5_vpu_enc_try_fmt_cap(struct file *file, void *fh, struct v4l2_fo
 		frmsize = vpu_fmt->v4l2_frmsize;
 	}
 
-	wave5_update_pix_fmt(&f->fmt.pix_mp, VPU_FMT_TYPE_CODEC,
+	wave4_update_pix_fmt(&f->fmt.pix_mp, VPU_FMT_TYPE_CODEC,
 			     width, height, frmsize);
 	f->fmt.pix_mp.colorspace = inst->colorspace;
 	f->fmt.pix_mp.ycbcr_enc = inst->ycbcr_enc;
@@ -508,7 +508,7 @@ static int wave5_vpu_enc_try_fmt_out(struct file *file, void *fh, struct v4l2_fo
 		frmsize = vpu_fmt->v4l2_frmsize;
 	}
 
-	wave5_update_pix_fmt(&f->fmt.pix_mp, VPU_FMT_TYPE_RAW,
+	wave4_update_pix_fmt(&f->fmt.pix_mp, VPU_FMT_TYPE_RAW,
 			     width, height, frmsize);
 	return 0;
 }
@@ -565,7 +565,7 @@ static int wave5_vpu_enc_s_fmt_out(struct file *file, void *fh, struct v4l2_form
 	if (!vpu_fmt)
 		return -EINVAL;
 
-	wave5_update_pix_fmt(&inst->dst_fmt, VPU_FMT_TYPE_CODEC,
+	wave4_update_pix_fmt(&inst->dst_fmt, VPU_FMT_TYPE_CODEC,
 			     f->fmt.pix_mp.width, f->fmt.pix_mp.height,
 			     vpu_fmt->v4l2_frmsize);
 	inst->conf_win.width = inst->dst_fmt.width;
@@ -717,7 +717,7 @@ static const struct v4l2_ioctl_ops wave5_vpu_enc_ioctl_ops = {
 
 	.vidioc_enum_fmt_vid_out	= wave5_vpu_enc_enum_fmt_out,
 	.vidioc_s_fmt_vid_out_mplane = wave5_vpu_enc_s_fmt_out,
-	.vidioc_g_fmt_vid_out_mplane = wave5_vpu_g_fmt_out,
+	.vidioc_g_fmt_vid_out_mplane = wave4_vpu_g_fmt_out,
 	.vidioc_try_fmt_vid_out_mplane = wave5_vpu_enc_try_fmt_out,
 
 	.vidioc_g_selection = wave5_vpu_enc_g_selection,
@@ -739,7 +739,7 @@ static const struct v4l2_ioctl_ops wave5_vpu_enc_ioctl_ops = {
 	.vidioc_try_encoder_cmd = v4l2_m2m_ioctl_try_encoder_cmd,
 	.vidioc_encoder_cmd = wave5_vpu_enc_encoder_cmd,
 
-	.vidioc_subscribe_event = wave5_vpu_subscribe_event,
+	.vidioc_subscribe_event = wave4_vpu_subscribe_event,
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
@@ -1460,7 +1460,7 @@ static int wave5_vpu_enc_start_streaming(struct vb2_queue *q, unsigned int count
 	pm_runtime_put_autosuspend(inst->dev->dev);
 	return 0;
 return_buffers:
-	wave5_return_bufs(q, VB2_BUF_STATE_QUEUED);
+	wave4_return_bufs(q, VB2_BUF_STATE_QUEUED);
 	pm_runtime_put_autosuspend(inst->dev->dev);
 	return ret;
 }
@@ -1543,19 +1543,19 @@ static void wave5_set_default_format(struct v4l2_pix_format_mplane *src_fmt,
 				     struct v4l2_pix_format_mplane *dst_fmt)
 {
 	src_fmt->pixelformat = enc_fmt_list[VPU_FMT_TYPE_RAW][0].v4l2_pix_fmt;
-	wave5_update_pix_fmt(src_fmt, VPU_FMT_TYPE_RAW,
+	wave4_update_pix_fmt(src_fmt, VPU_FMT_TYPE_RAW,
 			     W5_DEF_ENC_PIC_WIDTH, W5_DEF_ENC_PIC_HEIGHT,
 			     &enc_frmsize[VPU_FMT_TYPE_RAW]);
 
 	dst_fmt->pixelformat = enc_fmt_list[VPU_FMT_TYPE_CODEC][0].v4l2_pix_fmt;
-	wave5_update_pix_fmt(dst_fmt, VPU_FMT_TYPE_CODEC,
+	wave4_update_pix_fmt(dst_fmt, VPU_FMT_TYPE_CODEC,
 			     W5_DEF_ENC_PIC_WIDTH, W5_DEF_ENC_PIC_HEIGHT,
 			     &enc_frmsize[VPU_FMT_TYPE_CODEC]);
 }
 
 static int wave5_vpu_enc_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
 {
-	return wave5_vpu_queue_init(priv, src_vq, dst_vq, &wave5_vpu_enc_vb2_ops);
+	return wave4_vpu_queue_init(priv, src_vq, dst_vq, &wave5_vpu_enc_vb2_ops);
 }
 
 static const struct vpu_instance_ops wave5_vpu_enc_inst_ops = {
@@ -1822,7 +1822,7 @@ static int wave5_vpu_open_enc(struct file *filp)
 	inst->frame_rate = 30;
 
 	init_completion(&inst->irq_done);
-	ret = wave5_kfifo_alloc(inst);
+	ret = wave4_kfifo_alloc(inst);
 	if (ret) {
 		dev_err(inst->dev->dev, "failed to allocate fifo\n");
 		goto cleanup_inst;
@@ -1848,13 +1848,13 @@ static int wave5_vpu_open_enc(struct file *filp)
 	return 0;
 
 cleanup_inst:
-	wave5_cleanup_instance(inst, filp);
+	wave4_cleanup_instance(inst, filp);
 	return ret;
 }
 
 static int wave5_vpu_enc_release(struct file *filp)
 {
-	return wave5_vpu_release_device(filp, wave5_vpu_enc_close, "encoder");
+	return wave4_vpu_release_device(filp, wave5_vpu_enc_close, "encoder");
 }
 
 static const struct v4l2_file_operations wave5_vpu_enc_fops = {

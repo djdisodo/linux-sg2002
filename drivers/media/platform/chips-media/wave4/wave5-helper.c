@@ -27,12 +27,12 @@ const char *state_to_str(enum vpu_instance_state state)
 	}
 }
 
-int wave5_kfifo_alloc(struct vpu_instance *inst)
+int wave4_kfifo_alloc(struct vpu_instance *inst)
 {
 	return kfifo_alloc(&inst->irq_status, 16 * sizeof(int), GFP_KERNEL);
 }
 
-void wave5_cleanup_instance(struct vpu_instance *inst, struct file *filp)
+void wave4_cleanup_instance(struct vpu_instance *inst, struct file *filp)
 {
 	int i;
 
@@ -60,7 +60,7 @@ void wave5_cleanup_instance(struct vpu_instance *inst, struct file *filp)
 	kfree(inst);
 }
 
-int wave5_vpu_release_device(struct file *filp,
+int wave4_vpu_release_device(struct file *filp,
 			     int (*close_func)(struct vpu_instance *inst, u32 *fail_res),
 			     char *name)
 {
@@ -104,12 +104,12 @@ int wave5_vpu_release_device(struct file *filp,
 		}
 	}
 
-	wave5_cleanup_instance(inst, filp);
+	wave4_cleanup_instance(inst, filp);
 
 	return ret;
 }
 
-int wave5_vpu_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq,
+int wave4_vpu_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq,
 			 const struct vb2_ops *ops)
 {
 	struct vpu_instance *inst = priv;
@@ -144,7 +144,7 @@ int wave5_vpu_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue 
 	return 0;
 }
 
-int wave5_vpu_subscribe_event(struct v4l2_fh *fh, const struct v4l2_event_subscription *sub)
+int wave4_vpu_subscribe_event(struct v4l2_fh *fh, const struct v4l2_event_subscription *sub)
 {
 	struct vpu_instance *inst = wave5_to_vpu_inst(fh);
 	bool is_decoder = inst->type == VPU_INST_TYPE_DEC;
@@ -166,7 +166,7 @@ int wave5_vpu_subscribe_event(struct v4l2_fh *fh, const struct v4l2_event_subscr
 	}
 }
 
-int wave5_vpu_g_fmt_out(struct file *file, void *fh, struct v4l2_format *f)
+int wave4_vpu_g_fmt_out(struct file *file, void *fh, struct v4l2_format *f)
 {
 	struct vpu_instance *inst = file_to_vpu_inst(file);
 	int i;
@@ -227,7 +227,7 @@ enum wave_std wave5_to_vpu_std(unsigned int v4l2_pix_fmt, enum vpu_instance_type
 	}
 }
 
-void wave5_return_bufs(struct vb2_queue *q, u32 state)
+void wave4_return_bufs(struct vb2_queue *q, u32 state)
 {
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
@@ -246,7 +246,7 @@ void wave5_return_bufs(struct vb2_queue *q, u32 state)
 	}
 }
 
-void wave5_update_pix_fmt(struct v4l2_pix_format_mplane *pix_mp,
+void wave4_update_pix_fmt(struct v4l2_pix_format_mplane *pix_mp,
 			  int pix_fmt_type,
 			  unsigned int width,
 			  unsigned int height,
