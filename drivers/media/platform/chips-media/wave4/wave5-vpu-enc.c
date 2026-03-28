@@ -1317,13 +1317,13 @@ static int initialize_sequence(struct vpu_instance *inst)
 		return ret;
 	}
 
-	if (wave5_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0) {
+	if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0) {
 		if (inst->dev->product_code == WAVE420L_CODE)
 			dev_warn(inst->dev->dev,
 				 "%s: wave420l interrupt timeout, falling back to direct result polling\n",
 				 __func__);
 		else {
-			dev_err(inst->dev->dev, "%s: wave5_vpu_wait_interrupt failed\n",
+			dev_err(inst->dev->dev, "%s: wave4_vpu_wait_interrupt failed\n",
 				__func__);
 			return -EINVAL;
 		}
@@ -1517,7 +1517,7 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 		if (q_status.report_queue_count == 0)
 			break;
 
-		if (wave5_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0)
+		if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0)
 			break;
 
 		if (wave5_vpu_enc_get_output_info(inst, &enc_output_info))

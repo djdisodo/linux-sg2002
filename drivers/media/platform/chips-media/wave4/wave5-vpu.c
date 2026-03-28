@@ -49,7 +49,7 @@ struct wave5_match_data {
 static int vpu_poll_interval = 5;
 module_param(vpu_poll_interval, int, 0644);
 
-int wave5_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
+int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 {
 	int ret;
 	u32 reason;

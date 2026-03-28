@@ -1594,7 +1594,7 @@ static int initialize_sequence(struct vpu_instance *inst)
 		return ret;
 	}
 
-	if (wave5_vpu_wait_interrupt(inst, VPU_DEC_TIMEOUT) < 0)
+	if (wave4_vpu_wait_interrupt(inst, VPU_DEC_TIMEOUT) < 0)
 		dev_dbg(inst->dev->dev, "%s: failed to call vpu_wait_interrupt()\n", __func__);
 
 	ret = wave5_vpu_dec_complete_seq_init(inst, &initial_info);
