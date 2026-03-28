@@ -712,7 +712,7 @@ int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_pa
 	int ret;
 	struct vpu_device *vpu_dev = inst->dev;
 
-	ret = wave5_vpu_enc_check_open_param(inst, open_param);
+	ret = wave4_vpu_enc_check_open_param(inst, open_param);
 	if (ret)
 		return ret;
 
@@ -754,7 +754,7 @@ int wave5_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
 	}
 
 	do {
-		ret = wave5_vpu_enc_finish_seq(inst, fail_res);
+		ret = wave4_vpu_enc_finish_seq(inst, fail_res);
 		if (ret < 0 && *fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "enc_finish_seq timed out\n");
 			pm_runtime_resume_and_get(inst->dev->dev);
@@ -837,7 +837,7 @@ int wave5_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int 
 		inst->frame_buf[i].buf_cr_size = 0;
 	}
 
-	ret = wave5_vpu_enc_register_framebuffer(inst->dev->dev, inst, &inst->frame_buf[0],
+	ret = wave4_vpu_enc_register_framebuffer(inst->dev->dev, inst, &inst->frame_buf[0],
 						 COMPRESSED_FRAME_MAP,
 						 p_enc_info->num_frame_buffers);
 
@@ -887,7 +887,7 @@ int wave5_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *p
 
 	p_enc_info->pts_map[param->src_idx] = param->pts;
 
-	ret = wave5_vpu_encode(inst, param, fail_res);
+	ret = wave4_vpu_encode(inst, param, fail_res);
 
 	mutex_unlock(&vpu_dev->hw_lock);
 
@@ -904,7 +904,7 @@ int wave5_vpu_enc_get_output_info(struct vpu_instance *inst, struct enc_output_i
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_enc_get_result(inst, info);
+	ret = wave4_vpu_enc_get_result(inst, info);
 	if (ret) {
 		info->pts = 0;
 		goto unlock;
@@ -973,7 +973,7 @@ int wave5_vpu_enc_issue_seq_init(struct vpu_instance *inst)
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_enc_init_seq(inst);
+	ret = wave4_vpu_enc_init_seq(inst);
 
 	mutex_unlock(&vpu_dev->hw_lock);
 
@@ -993,7 +993,7 @@ int wave5_vpu_enc_complete_seq_init(struct vpu_instance *inst, struct enc_initia
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_enc_get_seq_info(inst, info);
+	ret = wave4_vpu_enc_get_seq_info(inst, info);
 	if (ret) {
 		p_enc_info->initial_info_obtained = false;
 		mutex_unlock(&vpu_dev->hw_lock);

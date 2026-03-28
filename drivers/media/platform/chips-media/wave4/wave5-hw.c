@@ -1861,7 +1861,7 @@ static void wave5_set_enc_crop_info(u32 codec, struct enc_wave_param *param, int
 	}
 }
 
-int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
+int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 {
 	u32 reg_val = 0, rot_mir_mode, fixed_cu_size_mode = 0x7;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
@@ -2207,7 +2207,7 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 	return send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
 }
 
-int wave5_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info)
+int wave4_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
@@ -2262,7 +2262,7 @@ static u32 calculate_chroma_stride(u32 width, u32 bit_depth)
 	return ALIGN(ALIGN(width / 2, 16) * ((bit_depth > 8) ? 5 : 4), 32);
 }
 
-int wave5_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *inst,
+int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *inst,
 				       struct frame_buffer *fb_arr, enum tiled_map_type map_type,
 				       unsigned int count)
 {
@@ -2488,7 +2488,7 @@ static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst)
 	return ret;
 }
 
-int wave5_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *fail_res)
+int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *fail_res)
 {
 	u32 src_frame_format;
 	u32 reg_val = 0;
@@ -2665,7 +2665,7 @@ int wave5_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 	return 0;
 }
 
-int wave5_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *result)
+int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *result)
 {
 	int ret;
 	u32 encoding_success;
@@ -2738,7 +2738,7 @@ int wave5_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 	return 0;
 }
 
-int wave5_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res)
+int wave4_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res)
 {
 	return send_firmware_command(inst, W5_DESTROY_INSTANCE, true, NULL, fail_res);
 }
@@ -2893,7 +2893,7 @@ static bool wave5_vpu_enc_check_param_valid(struct vpu_device *vpu_dev,
 	return true;
 }
 
-int wave5_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_param *open_param)
+int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_param *open_param)
 {
 	u32 pic_width;
 	u32 pic_height;

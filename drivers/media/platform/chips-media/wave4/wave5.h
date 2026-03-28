@@ -104,20 +104,20 @@ int wave4_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr);
 int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 				 struct enc_open_param *open_param);
 
-int wave5_vpu_enc_init_seq(struct vpu_instance *inst);
+int wave4_vpu_enc_init_seq(struct vpu_instance *inst);
 
-int wave5_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info);
+int wave4_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info);
 
-int wave5_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *inst,
+int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *inst,
 				       struct frame_buffer *fb_arr, enum tiled_map_type map_type,
 				       unsigned int count);
 
-int wave5_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *fail_res);
+int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *fail_res);
 
-int wave5_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *result);
+int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *result);
 
-int wave5_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res);
+int wave4_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res);
 
-int wave5_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_param *open_param);
+int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_param *open_param);
 
 #endif /* __WAVE5_FUNCTION_H__ */
