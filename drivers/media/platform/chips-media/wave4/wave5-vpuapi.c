@@ -273,8 +273,6 @@ int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 		}
 	}
 
-	wave5_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_task);
-
 	mutex_destroy(&inst->feed_lock);
 
 unlock_and_return:
@@ -689,7 +687,6 @@ int wave5_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd
 				break;
 		}
 
-		wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_task);
 		break;
 	}
 	case DEC_GET_SEQ_INFO: {

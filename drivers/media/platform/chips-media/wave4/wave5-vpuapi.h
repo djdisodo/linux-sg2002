@@ -379,8 +379,6 @@ struct dec_initial_info {
 	dma_addr_t rd_ptr; /* read pointer of bitstream buffer */
 	dma_addr_t wr_ptr; /* write pointer of bitstream buffer */
 	u32 sequence_no;
-	u32 vlc_buf_size;
-	u32 param_buf_size;
 };
 
 struct dec_output_info {
@@ -686,7 +684,6 @@ struct dec_info {
 	u32 user_data_enable;
 	u32 user_data_buf_size;
 	struct vpu_buf vb_work;
-	struct vpu_buf vb_task;
 	struct dec_output_info dec_out_info[WAVE5_MAX_FBS];
 	u32 seq_change_mask;
 	enum temporal_id_mode temp_id_select_mode;
@@ -696,8 +693,6 @@ struct dec_info {
 	u32 report_queue_count;
 	u32 cycle_per_tick;
 	u32 product_code;
-	u32 vlc_buf_size;
-	u32 param_buf_size;
 	bool initial_info_obtained;
 	bool reorder_enable;
 	bool first_cycle_check;

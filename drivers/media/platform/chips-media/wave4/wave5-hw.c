@@ -1104,7 +1104,6 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 	return 0;
 
 free_buffers:
-	wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_task);
 free_fbc_c_tbl_buffers:
 	for (i = 0; i < count; i++)
 		wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_c_tbl[i]);
