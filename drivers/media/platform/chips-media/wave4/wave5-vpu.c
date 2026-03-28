@@ -51,23 +51,37 @@ module_param(vpu_poll_interval, int, 0644);
 
 int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 {
+	unsigned int wait_ms = timeout;
 	int ret;
 	u32 reason;
 	u32 int_sts;
 
+	/*
+	 * Keep the wait bounded so userspace teardown does not get pinned in
+	 * long uninterruptible sleeps when firmware command completion stalls.
+	 */
+	if (wait_ms > 3000)
+		wait_ms = 3000;
+
 	ret = wait_for_completion_timeout(&inst->irq_done,
-					  msecs_to_jiffies(timeout));
+					  msecs_to_jiffies(wait_ms));
 	if (!ret) {
-		if (inst->dev->product_code == WAVE420L_CODE) {
-			int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
-			reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
-			if (int_sts && reason) {
-				wave5_vdi_write_register(inst->dev, W5_VPU_VINT_REASON_CLR,
-							 reason);
-				wave5_vdi_write_register(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
-				return 0;
-			}
+		int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
+		reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
+		if (int_sts && reason) {
+			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_REASON_CLR,
+						 reason);
+			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
+			return 0;
 		}
+		dev_warn(inst->dev->dev,
+			 "w4 wait_interrupt timeout: busy=0x%x vint_sts=0x%x vint_reason=0x%x ret_success=0x%x ret_fail=0x%x cmd=0x%x vcpu_pc=0x%x\n",
+			 wave5_vdi_read_register(inst->dev, W5_VPU_BUSY_STATUS),
+			 int_sts, reason,
+			 wave5_vdi_read_register(inst->dev, W5_RET_SUCCESS),
+			 wave5_vdi_read_register(inst->dev, W5_RET_FAIL_REASON),
+			 wave5_vdi_read_register(inst->dev, W5_COMMAND),
+			 wave5_vdi_read_register(inst->dev, W5_VCPU_CUR_PC));
 		return -ETIMEDOUT;
 	}
 
