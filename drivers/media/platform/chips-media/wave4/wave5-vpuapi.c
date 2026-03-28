@@ -372,16 +372,14 @@ int wave5_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *pr
 	dma_addr_t rd_ptr;
 	dma_addr_t wr_ptr;
 	int room;
-	struct vpu_device *vpu_dev = inst->dev;
-	int ret;
 
 	p_dec_info = &inst->codec_info->dec_info;
 
-	ret = mutex_lock_interruptible(&vpu_dev->hw_lock);
-	if (ret)
-		return ret;
-	rd_ptr = wave5_dec_get_rd_ptr(inst);
-	mutex_unlock(&vpu_dev->hw_lock);
+	/*
+	 * Ring-buffer feeding follows the Wave4 behavior: use the driver's
+	 * cached RD pointer while feeding input.
+	 */
+	rd_ptr = p_dec_info->stream_rd_ptr;
 
 	wr_ptr = p_dec_info->stream_wr_ptr;
 
