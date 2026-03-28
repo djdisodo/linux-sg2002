@@ -35,9 +35,9 @@
 #define SG2002_DRAM_32_35_REG_SIZE	0x4
 #define SG2002_DRAM_32_35_EN_BIT	BIT(24)
 #define SG2002_TOP_SYSCON_DDR_REMAP_OFFSET	0x64
-#define W420L_INT_SET_PARAM_SEQ		BIT(1)
-#define W420L_INT_PIC_RUN		BIT(3)
-#define W420L_INT_QUERY			BIT(9)
+#define W4_INT_SET_PARAM_SEQ		BIT(1)
+#define W4_INT_PIC_RUN			BIT(3)
+#define W4_INT_QUERY			BIT(9)
 
 struct wave5_match_data {
 	int flags;
@@ -92,71 +92,25 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 
 static void wave5_vpu_handle_irq(void *dev_id)
 {
-	u32 seq_done;
-	u32 cmd_done;
 	u32 irq_reason;
-	u32 irq_subreason;
 	struct vpu_instance *inst, *tmp;
 	struct vpu_device *dev = dev_id;
 	int val;
 	unsigned long flags;
 
 	irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
-	seq_done = wave5_vdi_read_register(dev, W5_RET_SEQ_DONE_INSTANCE_INFO);
-	cmd_done = wave5_vdi_read_register(dev, W5_RET_QUEUE_CMD_DONE_INST);
 	wave5_vdi_write_register(dev, W5_VPU_VINT_REASON_CLR, irq_reason);
 	wave5_vdi_write_register(dev, W5_VPU_VINT_CLEAR, 0x1);
 
 	spin_lock_irqsave(&dev->irq_spinlock, flags);
 	list_for_each_entry_safe(inst, tmp, &dev->instances, list) {
-		/*
-		 * Wave420L uses Wave4-style interrupt reasons and does not
-		 * reliably populate Wave5 queue/seq-done instance registers.
-		 */
-		if (dev->product_code == WAVE420L_CODE) {
-			if (irq_reason & (W420L_INT_SET_PARAM_SEQ | W420L_INT_QUERY))
-				complete(&inst->irq_done);
+		if (irq_reason & (W4_INT_SET_PARAM_SEQ | W4_INT_QUERY))
+			complete(&inst->irq_done);
 
-			if (irq_reason & W420L_INT_PIC_RUN) {
-				val = BIT(INT_WAVE5_DEC_PIC);
-				kfifo_in(&inst->irq_status, &val, sizeof(int));
-				complete(&inst->irq_done);
-			}
-
-			continue;
-		}
-
-		if (irq_reason & BIT(INT_WAVE5_INIT_SEQ) ||
-		    irq_reason & BIT(INT_WAVE5_ENC_SET_PARAM)) {
-			if (PRODUCT_CODE_WAVE515_FAMILY(dev->product_code) &&
-			    (cmd_done & BIT(inst->id))) {
-				cmd_done &= ~BIT(inst->id);
-				wave5_vdi_write_register(dev, W5_RET_QUEUE_CMD_DONE_INST,
-							 cmd_done);
-				complete(&inst->irq_done);
-			} else if (seq_done & BIT(inst->id)) {
-				seq_done &= ~BIT(inst->id);
-				wave5_vdi_write_register(dev, W5_RET_SEQ_DONE_INSTANCE_INFO,
-							 seq_done);
-				complete(&inst->irq_done);
-			}
-		}
-
-		if (irq_reason & BIT(INT_WAVE5_DEC_PIC) ||
-		    irq_reason & BIT(INT_WAVE5_ENC_PIC)) {
-			if (cmd_done & BIT(inst->id)) {
-				cmd_done &= ~BIT(inst->id);
-				if (dev->irq >= 0) {
-					irq_subreason =
-						wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
-					if (!(irq_subreason & BIT(INT_WAVE5_DEC_PIC)))
-						wave5_vdi_write_register(dev,
-									 W5_RET_QUEUE_CMD_DONE_INST,
-									 cmd_done);
-				}
-				val = BIT(INT_WAVE5_DEC_PIC);
-				kfifo_in(&inst->irq_status, &val, sizeof(int));
-			}
+		if (irq_reason & W4_INT_PIC_RUN) {
+			val = BIT(INT_WAVE5_DEC_PIC);
+			kfifo_in(&inst->irq_status, &val, sizeof(int));
+			complete(&inst->irq_done);
 		}
 	}
 	spin_unlock_irqrestore(&dev->irq_spinlock, flags);
@@ -262,38 +216,20 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 	}
 
 	ret = wave4_vpu_init_with_bitcode(dev, (u8 *)fw->data, fw->size);
-		if (ret == -EBUSY) {
-			dev_warn(dev, "VPU firmware is already running, reusing resident firmware\n");
-			if (vpu_dev->product_code == WAVE420L_CODE) {
-					ret = wave5_vpu_re_init(dev, (u8 *)fw->data, fw->size);
-					if (ret) {
-						dev_warn(dev, "wave420l resident re-init/setup failed: %d\n", ret);
-						/*
-						 * Follow with a full INIT_VPU attempt even after timeout
-						 * based failures, since some boots recover only on the
-						 * cold-init path.
-						 */
-						ret = wave5_vpu_init(dev, (u8 *)fw->data, fw->size);
-						if (ret) {
-							dev_warn(dev,
-								 "wave420l firmware recovery failed: %d, falling back to resident fw\n",
-								 ret);
-						vpu_dev->fw_running = true;
-						skip_version_query = true;
-						ret = 0;
-					}
-				}
-			} else {
+	if (ret == -EBUSY) {
+		dev_warn(dev, "VPU firmware is already running, reusing resident firmware\n");
+		ret = wave5_vpu_re_init(dev, (u8 *)fw->data, fw->size);
+		if (ret) {
+			dev_warn(dev, "w4 resident re-init/setup failed: %d\n", ret);
 			/*
-			 * Some boot flows leave a resident VPU firmware with command queue
-			 * state that rejects INIT/QUERY. Try one forced reset+init pass.
+			 * Follow with a full INIT_VPU attempt even after timeout
+			 * based failures, since some boots recover only on the
+			 * cold-init path.
 			 */
-			ret = wave5_vpu_reset(dev, SW_RESET_FORCE);
-			if (!ret)
-				ret = wave5_vpu_init(dev, (u8 *)fw->data, fw->size);
+			ret = wave5_vpu_init(dev, (u8 *)fw->data, fw->size);
 			if (ret) {
 				dev_warn(dev,
-					 "forced reset/re-init failed (%d), using resident firmware without version query\n",
+					 "w4 firmware recovery failed: %d, falling back to resident fw\n",
 					 ret);
 				vpu_dev->fw_running = true;
 				skip_version_query = true;
@@ -456,43 +392,14 @@ program_direct:
 
 static __maybe_unused int wave5_pm_suspend(struct device *dev)
 {
-	struct vpu_device *vpu = dev_get_drvdata(dev);
-
-	if (vpu->product_code == WAVE420L_CODE)
-		return 0;
-
-	if (pm_runtime_suspended(dev))
-		return 0;
-
-	if (vpu->irq < 0)
-		hrtimer_cancel(&vpu->hrtimer);
-
-	wave5_vpu_sleep_wake(dev, true, NULL, 0);
-	clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
-
+	(void)dev;
 	return 0;
 }
 
 static __maybe_unused int wave5_pm_resume(struct device *dev)
 {
-	struct vpu_device *vpu = dev_get_drvdata(dev);
-	int ret = 0;
-
-	if (vpu->product_code == WAVE420L_CODE)
-		return 0;
-
-	wave5_vpu_sleep_wake(dev, false, NULL, 0);
-	ret = clk_bulk_prepare_enable(vpu->num_clks, vpu->clks);
-	if (ret) {
-		dev_err(dev, "Enabling clocks, fail: %d\n", ret);
-		return ret;
-	}
-
-	if (vpu->irq < 0 && !hrtimer_active(&vpu->hrtimer))
-		hrtimer_start(&vpu->hrtimer, ns_to_ktime(vpu->vpu_poll_interval * NSEC_PER_MSEC),
-			      HRTIMER_MODE_REL_PINNED);
-
-	return ret;
+	(void)dev;
+	return 0;
 }
 
 static const struct dev_pm_ops wave5_pm_ops = {
@@ -643,15 +550,10 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		 (match_data->flags & WAVE5_IS_DEC) ? "'DECODE'" : "");
 	dev_info(&pdev->dev, "Product Code:      0x%x\n", dev->product_code);
 	dev_info(&pdev->dev, "Firmware Revision: %u\n", fw_revision);
-	if (dev->product_code == WAVE420L_CODE)
-		dev_warn(&pdev->dev,
-			 "wave420l is running in compatibility mode using the wave5 stack\n");
 
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 500);
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
-	if (dev->product_code != WAVE420L_CODE)
-		wave5_vpu_sleep_wake(&pdev->dev, true, NULL, 0);
 
 	return 0;
 
