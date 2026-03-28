@@ -1426,6 +1426,8 @@ static int streamoff_output(struct vb2_queue *q)
 	dma_addr_t new_rd_ptr;
 	struct dec_output_info dec_info;
 	unsigned int i;
+	unsigned int drain_outputs = 0;
+	unsigned int max_drain_outputs = 0;
 	struct vpu_src_buffer *vpu_buf;
 
 	inst->retry = false;
@@ -1447,7 +1449,8 @@ static int streamoff_output(struct vb2_queue *q)
 		v4l2_m2m_buf_done(buf, VB2_BUF_STATE_ERROR);
 	}
 
-	while (wave5_vpu_dec_get_output_info(inst, &dec_info) == 0) {
+	while (drain_outputs++ < max_drain_outputs &&
+	       wave5_vpu_dec_get_output_info(inst, &dec_info) == 0) {
 		if (dec_info.index_frame_display >= 0)
 			wave5_vpu_dec_set_disp_flag(inst, dec_info.index_frame_display);
 	}
@@ -1517,13 +1520,13 @@ static void wave5_vpu_dec_stop_streaming(struct vb2_queue *q)
 {
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
-
-	bool check_cmd = TRUE;
+	unsigned int drain_attempts = 0;
+	unsigned int max_drain_attempts = 0;
 
 	dev_dbg(inst->dev->dev, "%s: type: %u\n", __func__, q->type);
 	pm_runtime_resume_and_get(inst->dev->dev);
 	inst->empty_queue = true;
-	while (check_cmd) {
+	while (drain_attempts++ < max_drain_attempts) {
 		struct queue_status_info q_status;
 		struct dec_output_info dec_output_info;
 
@@ -1531,7 +1534,7 @@ static void wave5_vpu_dec_stop_streaming(struct vb2_queue *q)
 		if ((inst->state == VPU_INST_STATE_STOP ||
 		     inst->state == VPU_INST_STATE_INIT_SEQ ||
 		     q_status.instance_queue_count == 0) &&
-			q_status.report_queue_count == 0)
+		     q_status.report_queue_count == 0)
 			break;
 
 		if (wave5_vpu_dec_get_output_info(inst, &dec_output_info))
