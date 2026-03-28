@@ -18,7 +18,7 @@ static int wave5_vdi_allocate_common_memory(struct device *dev)
 	if (!vpu_dev->common_mem.vaddr) {
 		int ret;
 
-		vpu_dev->common_mem.size = WAVE420L_SIZE_COMMON;
+		vpu_dev->common_mem.size = W4_SIZE_COMMON;
 
 		ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vpu_dev->common_mem);
 		if (ret) {

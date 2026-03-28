@@ -366,7 +366,7 @@ unsigned int wave5_vpu_get_product_id(struct vpu_device *vpu_dev)
 {
 	u32 val = vpu_read_reg(vpu_dev, W5_PRODUCT_NUMBER);
 
-	if (val == WAVE420L_CODE)
+	if (val == W4_PRODUCT_CODE)
 		return PRODUCT_ID_420L;
 
 	dev_err(vpu_dev->dev, "Unexpected product id (%x), expected Wave4\n", val);
@@ -638,7 +638,7 @@ int wave5_vpu_init(struct device *dev, u8 *fw, size_t size)
 	dev_info(vpu_dev->dev, "w4 init: code_base=0x%llx fw_size=%zu\n",
 		 (unsigned long long)code_base, size);
 
-	code_size = WAVE420L_MAX_CODE_BUF_SIZE;
+	code_size = W4_MAX_CODE_BUF_SIZE;
 
 	/* ALIGN TO 4KB */
 	code_size &= ~0xfff;
@@ -741,7 +741,7 @@ int wave5_vpu_build_up_dec_param(struct vpu_instance *inst,
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	struct vpu_device *vpu_dev = inst->dev;
 	static const size_t w4_workbuf_fallback[] = {
-		WAVE420LDEC_WORKBUF_SIZE,
+		W4_DEC_WORKBUF_SIZE,
 		2 * 1024 * 1024,
 		1 * 1024 * 1024,
 	};
@@ -773,7 +773,7 @@ int wave5_vpu_build_up_dec_param(struct vpu_instance *inst,
 	}
 	if (ret)
 		return ret;
-	if (p_dec_info->vb_work.size != WAVE420LDEC_WORKBUF_SIZE)
+	if (p_dec_info->vb_work.size != W4_DEC_WORKBUF_SIZE)
 		dev_warn(vpu_dev->dev,
 			 "w4: reduced decoder workbuf to %zu bytes due contiguous allocation pressure\n",
 			 p_dec_info->vb_work.size);
@@ -1321,7 +1321,7 @@ int wave5_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 
 	code_base = common_vb->daddr;
 
-	code_size = WAVE420L_MAX_CODE_BUF_SIZE;
+	code_size = W4_MAX_CODE_BUF_SIZE;
 
 	/* ALIGN TO 4KB */
 	code_size &= ~0xfff;
@@ -1482,7 +1482,7 @@ int wave5_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 		common_vb = &vpu_dev->common_mem;
 
 		code_base = common_vb->daddr;
-		code_size = WAVE420L_MAX_CODE_BUF_SIZE;
+		code_size = W4_MAX_CODE_BUF_SIZE;
 
 		/* ALIGN TO 4KB */
 		code_size &= ~0xfff;
@@ -1732,7 +1732,7 @@ int wave5_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 		p_enc_info->sec_axi_info.use_enc_lf_enable = 1;
 	}
 
-	p_enc_info->vb_work.size = WAVE521ENC_WORKBUF_SIZE;
+	p_enc_info->vb_work.size = W4_ENC_WORKBUF_SIZE;
 	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &p_enc_info->vb_work);
 	if (ret) {
 		memset(&p_enc_info->vb_work, 0, sizeof(p_enc_info->vb_work));
@@ -1922,7 +1922,7 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 		src_width = ALIGN(p_open_param->pic_width, 8);
 		src_height = ALIGN(p_open_param->pic_height, 8);
 		chroma_format_idc = (p_open_param->src_format == FORMAT_422) ? 1 : 0;
-		temp_base = inst->dev->common_mem.daddr + WAVE420L_MAX_CODE_BUF_SIZE;
+		temp_base = inst->dev->common_mem.daddr + W4_MAX_CODE_BUF_SIZE;
 
 		vpu_write_reg(inst->dev, W4_BS_START_ADDR, p_enc_info->stream_buf_start_addr);
 		vpu_write_reg(inst->dev, W4_BS_SIZE, p_enc_info->stream_buf_size);
@@ -1946,7 +1946,7 @@ int wave5_vpu_enc_init_seq(struct vpu_instance *inst)
 		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
 		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 		vpu_write_reg(inst->dev, W4_ADDR_TEMP_BASE, temp_base);
-		vpu_write_reg(inst->dev, W4_TEMP_SIZE, WAVE420L_TEMPBUF_SIZE);
+		vpu_write_reg(inst->dev, W4_TEMP_SIZE, W4_TEMPBUF_SIZE);
 		vpu_write_reg(inst->dev, W4_TEMP_PARAM, 0);
 
 		vpu_write_reg(inst->dev, W4_COMMAND_OPTION, OPT_COMMON);
@@ -2375,7 +2375,7 @@ int wave5_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	p_enc_info->vb_sub_sam_buf = vb_sub_sam_buf;
 
 	vb_task.size = (p_enc_info->vlc_buf_size * VLC_BUF_NUM) +
-			(p_enc_info->param_buf_size * WAVE521_COMMAND_QUEUE_DEPTH);
+			(p_enc_info->param_buf_size * W4_COMMAND_QUEUE_DEPTH);
 	vb_task.daddr = 0;
 	if (p_enc_info->vb_task.size == 0) {
 		ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_task);

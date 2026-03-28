@@ -8,30 +8,15 @@
 #ifndef _VPU_CONFIG_H_
 #define _VPU_CONFIG_H_
 
-#define WAVE515_CODE			0x5150
-#define WAVE420L_CODE                   0x4201
-#define WAVE517_CODE                    0x5170
-#define WAVE537_CODE                    0x5370
-#define WAVE511_CODE                    0x5110
-#define WAVE521_CODE                    0x5210
-#define WAVE521C_CODE                   0x521c
-#define WAVE521C_DUAL_CODE              0x521d  // wave521 dual core
-#define WAVE521E1_CODE                  0x5211
+#define W4_PRODUCT_CODE			0x4201
 
-#define PRODUCT_CODE_W_SERIES(x) ({					\
-		int c = x;						\
-		((c) == WAVE517_CODE ||	(c) == WAVE537_CODE ||		\
-		 (c) == WAVE511_CODE || (c) == WAVE521_CODE ||		\
-		 (c) == WAVE521E1_CODE || (c) == WAVE521C_CODE ||	\
-		 (c) == WAVE521C_DUAL_CODE || (c) == WAVE420L_CODE) ||	\
-		 (c) == WAVE515_CODE;					\
-})
+#define PRODUCT_CODE_W_SERIES(x)	((x) == W4_PRODUCT_CODE)
 
 #define WAVE517_WORKBUF_SIZE            (2 * 1024 * 1024)
-#define WAVE521ENC_WORKBUF_SIZE         (128 * 1024)      //HEVC 128K, AVC 40K
+#define W4_ENC_WORKBUF_SIZE             (128 * 1024)      //HEVC 128K, AVC 40K
 #define WAVE521DEC_WORKBUF_SIZE         (1784 * 1024)
 #define WAVE515DEC_WORKBUF_SIZE		(2 * 1024 * 1024)
-#define WAVE420LDEC_WORKBUF_SIZE        (3 * 1024 * 1024)
+#define W4_DEC_WORKBUF_SIZE             (3 * 1024 * 1024)
 
 #define MAX_NUM_INSTANCE                32
 
@@ -74,7 +59,7 @@
 /************************************************************************/
 #define VLC_BUF_NUM                     (2)
 
-#define WAVE521_COMMAND_QUEUE_DEPTH	(2)
+#define W4_COMMAND_QUEUE_DEPTH		(2)
 #define WAVE515_COMMAND_QUEUE_DEPTH	(4)
 
 #define W5_REMAP_INDEX0                 0
@@ -83,17 +68,15 @@
 
 #define WAVE521_MAX_CODE_BUF_SIZE	(2 * 1024 * 1024)
 #define WAVE515_MAX_CODE_BUF_SIZE	(1024 * 1024)
-#define WAVE420L_MAX_CODE_BUF_SIZE      (256 * 1024)
+#define W4_MAX_CODE_BUF_SIZE            (256 * 1024)
 #define WAVE5_TEMPBUF_SIZE              (1024 * 1024)
-#define WAVE420L_TEMPBUF_SIZE           (512 * 1024)
+#define W4_TEMPBUF_SIZE                 (512 * 1024)
 
 #define WAVE521_SIZE_COMMON		(WAVE521_MAX_CODE_BUF_SIZE + WAVE5_TEMPBUF_SIZE)
 #define WAVE515_ONE_TASKBUF_SIZE	(8 * 1024 * 1024)
 #define WAVE515_SIZE_COMMON		(WAVE515_MAX_CODE_BUF_SIZE + WAVE5_TEMPBUF_SIZE + \
 					 WAVE515_COMMAND_QUEUE_DEPTH * WAVE515_ONE_TASKBUF_SIZE)
-#define WAVE420L_SIZE_COMMON            (WAVE420L_MAX_CODE_BUF_SIZE + WAVE420L_TEMPBUF_SIZE)
-
-#define PRODUCT_CODE_WAVE515_FAMILY(x) ((x) == WAVE515_CODE || (x) == WAVE420L_CODE)
+#define W4_SIZE_COMMON                  (W4_MAX_CODE_BUF_SIZE + W4_TEMPBUF_SIZE)
 
 //=====4. VPU REPORT MEMORY  ======================//
 
