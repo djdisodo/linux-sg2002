@@ -937,12 +937,7 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 		info->profile = FIELD_GET(SEQ_PARAM_PROFILE_MASK, reg_val);
 	}
 
-	if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code)) {
-		info->vlc_buf_size = vpu_read_reg(inst->dev, W5_RET_VLC_BUF_SIZE);
-		info->param_buf_size = vpu_read_reg(inst->dev, W5_RET_PARAM_BUF_SIZE);
-		p_dec_info->vlc_buf_size = info->vlc_buf_size;
-		p_dec_info->param_buf_size = info->param_buf_size;
-	}
+	/* Wave4 flow does not use the Wave521 task-buffer size query fields. */
 }
 
 int wave5_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info)
