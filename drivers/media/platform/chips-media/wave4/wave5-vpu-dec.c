@@ -179,7 +179,6 @@ static bool wave5_last_src_buffer_consumed(struct v4l2_m2m_ctx *m2m_ctx)
 static void wave5_handle_src_buffer(struct vpu_instance *inst, dma_addr_t rd_ptr)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
-	struct v4l2_m2m_buffer *buf, *n;
 	size_t consumed_bytes = 0;
 
 	if (rd_ptr >= inst->last_rd_ptr) {
@@ -197,9 +196,15 @@ static void wave5_handle_src_buffer(struct vpu_instance *inst, dma_addr_t rd_ptr
 	dev_dbg(inst->dev->dev, "%s: %zu bytes of bitstream was consumed", __func__,
 		consumed_bytes);
 
-	v4l2_m2m_for_each_src_buf_safe(m2m_ctx, buf, n) {
-		struct vb2_v4l2_buffer *src_buf = &buf->vb;
-		size_t src_size = vb2_get_plane_payload(&src_buf->vb2_buf, 0);
+	while (consumed_bytes > 0) {
+		struct vb2_v4l2_buffer *src_buf;
+		size_t src_size;
+
+		src_buf = v4l2_m2m_next_src_buf(m2m_ctx);
+		if (!src_buf)
+			break;
+
+		src_size = vb2_get_plane_payload(&src_buf->vb2_buf, 0);
 
 		if (src_size > consumed_bytes)
 			break;
@@ -207,6 +212,8 @@ static void wave5_handle_src_buffer(struct vpu_instance *inst, dma_addr_t rd_ptr
 		dev_dbg(inst->dev->dev, "%s: removing src buffer %i",
 			__func__, src_buf->vb2_buf.index);
 		src_buf = v4l2_m2m_src_buf_remove(m2m_ctx);
+		if (!src_buf)
+			break;
 		inst->timestamp = src_buf->vb2_buf.timestamp;
 		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
 		consumed_bytes -= src_size;
