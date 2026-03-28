@@ -985,7 +985,6 @@ int wave5_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 	u32 reg_val, cbcr_interleave, nv21, pic_size;
 	u32 addr_y, addr_cb, addr_cr;
 	u32 mv_col_size, frame_width, frame_height, fbc_y_tbl_size, fbc_c_tbl_size;
-	struct vpu_buf vb_buf;
 	bool justified = WTL_RIGHT_JUSTIFIED;
 	u32 format_no = WTL_PIXEL_8BIT;
 	u32 color_format = 0;
@@ -1038,28 +1037,6 @@ int wave5_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 			goto free_fbc_c_tbl_buffers;
 
 		pic_size = (init_info->pic_width << 16) | (init_info->pic_height);
-
-		if (!PRODUCT_CODE_WAVE515_FAMILY(inst->dev->product_code)) {
-			vb_buf.size = (p_dec_info->vlc_buf_size * VLC_BUF_NUM) +
-				(p_dec_info->param_buf_size * WAVE521_COMMAND_QUEUE_DEPTH);
-			vb_buf.daddr = 0;
-
-			if (vb_buf.size != p_dec_info->vb_task.size) {
-				wave5_vdi_free_dma_memory(inst->dev,
-							  &p_dec_info->vb_task);
-				ret = wave5_vdi_allocate_dma_memory(inst->dev,
-								    &vb_buf);
-				if (ret)
-					goto free_fbc_c_tbl_buffers;
-
-				p_dec_info->vb_task = vb_buf;
-			}
-
-			vpu_write_reg(inst->dev, W5_CMD_SET_FB_ADDR_TASK_BUF,
-				      p_dec_info->vb_task.daddr);
-			vpu_write_reg(inst->dev, W5_CMD_SET_FB_TASK_BUF_SIZE,
-				      vb_buf.size);
-		}
 	} else {
 		pic_size = (init_info->pic_width << 16) | (init_info->pic_height);
 
