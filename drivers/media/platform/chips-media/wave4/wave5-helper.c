@@ -73,9 +73,7 @@ int wave4_vpu_release_device(struct file *filp,
 	 * in the wave5_vpu_dec_finish_decode.
 	 * So the spin lock and mutex were used to protect the list in the release function.
 	 */
-	ret = mutex_lock_interruptible(&inst->dev->irq_lock);
-	if (ret)
-		return ret;
+	mutex_lock(&inst->dev->irq_lock);
 	spin_lock_irqsave(&inst->dev->irq_spinlock, flags);
 	list_del_init(&inst->list);
 	spin_unlock_irqrestore(&inst->dev->irq_spinlock, flags);

@@ -1827,13 +1827,15 @@ static int wave5_vpu_open_enc(struct file *filp)
 
 	wave5_vdi_allocate_sram(inst->dev);
 
-	ret = mutex_lock_interruptible(&dev->dev_lock);
+	ret = mutex_lock_interruptible(&dev->irq_lock);
 	if (ret)
 		goto cleanup_inst;
 
+	spin_lock_irq(&dev->irq_spinlock);
 	list_add_tail(&inst->list, &dev->instances);
+	spin_unlock_irq(&dev->irq_spinlock);
 
-	mutex_unlock(&dev->dev_lock);
+	mutex_unlock(&dev->irq_lock);
 
 	return 0;
 
