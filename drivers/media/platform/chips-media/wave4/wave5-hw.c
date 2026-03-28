@@ -843,7 +843,7 @@ static u32 get_bitstream_options(struct dec_info *info)
 	return bs_option;
 }
 
-int wave5_vpu_dec_init_seq(struct vpu_instance *inst)
+int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	u32 bs_option, cmd_option = INIT_SEQ_NORMAL;
@@ -895,7 +895,7 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 	u32 profile_compatibility_flag;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 
-	p_dec_info->stream_rd_ptr = wave5_dec_get_rd_ptr(inst);
+	p_dec_info->stream_rd_ptr = wave4_dec_get_rd_ptr(inst);
 	info->rd_ptr = p_dec_info->stream_rd_ptr;
 
 	p_dec_info->frame_display_flag = vpu_read_reg(inst->dev, W5_RET_DEC_DISP_IDC);
@@ -940,7 +940,7 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 	/* Wave4 flow does not use the Wave521 task-buffer size query fields. */
 }
 
-int wave5_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info)
+int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info)
 {
 	int ret;
 	u32 reg_val;
@@ -974,7 +974,7 @@ int wave5_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 	return ret;
 }
 
-int wave5_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_buffer *fb_arr,
+int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_buffer *fb_arr,
 				       enum tiled_map_type map_type, unsigned int count)
 {
 	int ret;
@@ -1148,7 +1148,7 @@ static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst)
 	return ret;
 }
 
-int wave5_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
+int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 {
 	u32 reg_val;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
@@ -1200,7 +1200,7 @@ int wave5_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	return 0;
 }
 
-int wave5_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *result)
+int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *result)
 {
 	int ret;
 	u32 index, nal_unit_type, reg_val, sub_layer_info;
@@ -1638,7 +1638,7 @@ int wave5_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 	return ret;
 }
 
-int wave5_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res)
+int wave4_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res)
 {
 	return send_firmware_command(inst, W5_DESTROY_INSTANCE, true, NULL, fail_res);
 }
@@ -1660,7 +1660,7 @@ int wave5_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
 	return 0;
 }
 
-int wave5_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index)
+int wave4_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -1677,7 +1677,7 @@ int wave5_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index)
 	return 0;
 }
 
-int wave5_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index)
+int wave4_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index)
 {
 	int ret;
 
@@ -1702,12 +1702,12 @@ int wave5_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags)
 	return 0;
 }
 
-dma_addr_t wave5_dec_get_rd_ptr(struct vpu_instance *inst)
+dma_addr_t wave4_dec_get_rd_ptr(struct vpu_instance *inst)
 {
 	return vpu_read_reg(inst->dev, W4_BS_RD_PTR);
 }
 
-int wave5_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr)
+int wave4_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr)
 {
 	vpu_write_reg(inst->dev, W4_BS_RD_PTR, addr);
 	return 0;

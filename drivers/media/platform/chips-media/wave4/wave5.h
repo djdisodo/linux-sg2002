@@ -73,31 +73,31 @@ int wave5_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos);
 
 int wave5_vpu_hw_flush_instance(struct vpu_instance *inst);
 
-int wave5_vpu_dec_register_framebuffer(struct vpu_instance *inst,
+int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst,
 				       struct frame_buffer *fb_arr, enum tiled_map_type map_type,
 				       unsigned int count);
 
 int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size);
 
-int wave5_vpu_dec_init_seq(struct vpu_instance *inst);
+int wave4_vpu_dec_init_seq(struct vpu_instance *inst);
 
-int wave5_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info);
+int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info);
 
-int wave5_vpu_decode(struct vpu_instance *inst, u32 *fail_res);
+int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res);
 
-int wave5_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *result);
+int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *result);
 
-int wave5_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res);
+int wave4_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res);
 
-int wave5_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index);
+int wave4_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index);
 
-int wave5_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index);
+int wave4_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index);
 
 int wave5_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags);
 
-dma_addr_t wave5_dec_get_rd_ptr(struct vpu_instance *inst);
+dma_addr_t wave4_dec_get_rd_ptr(struct vpu_instance *inst);
 
-int wave5_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr);
+int wave4_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr);
 
 /***< WAVE5 encoder >******/
 

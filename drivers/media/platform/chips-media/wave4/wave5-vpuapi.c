@@ -233,7 +233,7 @@ int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 	}
 
 	do {
-		ret = wave5_vpu_dec_finish_seq(inst, fail_res);
+		ret = wave4_vpu_dec_finish_seq(inst, fail_res);
 		if (ret < 0 && *fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "dec_finish_seq timed out\n");
 			goto unlock_and_return;
@@ -292,7 +292,7 @@ int wave5_vpu_dec_issue_seq_init(struct vpu_instance *inst)
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_dec_init_seq(inst);
+	ret = wave4_vpu_dec_init_seq(inst);
 
 	mutex_unlock(&vpu_dev->hw_lock);
 
@@ -309,11 +309,11 @@ int wave5_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initia
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_dec_get_seq_info(inst, info);
+	ret = wave4_vpu_dec_get_seq_info(inst, info);
 	if (!ret)
 		p_dec_info->initial_info_obtained = true;
 
-	info->rd_ptr = wave5_dec_get_rd_ptr(inst);
+	info->rd_ptr = wave4_dec_get_rd_ptr(inst);
 	info->wr_ptr = p_dec_info->stream_wr_ptr;
 
 	p_dec_info->initial_info = *info;
@@ -351,12 +351,12 @@ int wave5_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of
 		return ret;
 
 	fb = inst->frame_buf;
-	ret = wave5_vpu_dec_register_framebuffer(inst, &fb[p_dec_info->num_of_decoding_fbs],
+	ret = wave4_vpu_dec_register_framebuffer(inst, &fb[p_dec_info->num_of_decoding_fbs],
 						 LINEAR_FRAME_MAP, p_dec_info->num_of_display_fbs);
 	if (ret)
 		goto err_out;
 
-	ret = wave5_vpu_dec_register_framebuffer(inst, &fb[0], COMPRESSED_FRAME_MAP,
+	ret = wave4_vpu_dec_register_framebuffer(inst, &fb[0], COMPRESSED_FRAME_MAP,
 						 p_dec_info->num_of_decoding_fbs);
 
 err_out:
@@ -456,7 +456,7 @@ int wave5_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail)
 	if (ret)
 		return ret;
 
-	ret = wave5_vpu_decode(inst, res_fail);
+	ret = wave4_vpu_decode(inst, res_fail);
 
 	mutex_unlock(&vpu_dev->hw_lock);
 
@@ -473,7 +473,7 @@ int wave5_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int upd
 	if (ret)
 		return ret;
 
-	ret = wave5_dec_set_rd_ptr(inst, addr);
+	ret = wave4_dec_set_rd_ptr(inst, addr);
 
 	p_dec_info->stream_rd_ptr = addr;
 	if (update_wr_ptr)
@@ -493,7 +493,7 @@ dma_addr_t wave5_vpu_dec_get_rd_ptr(struct vpu_instance *inst)
 	if (ret)
 		return rd_ptr;
 
-	rd_ptr = wave5_dec_get_rd_ptr(inst);
+	rd_ptr = wave4_dec_get_rd_ptr(inst);
 
 	mutex_unlock(&inst->dev->hw_lock);
 
@@ -523,7 +523,7 @@ int wave5_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 
 	memset(info, 0, sizeof(*info));
 
-	ret = wave5_vpu_dec_get_result(inst, info);
+	ret = wave4_vpu_dec_get_result(inst, info);
 	if (ret) {
 		info->rd_ptr = p_dec_info->stream_rd_ptr;
 		info->wr_ptr = p_dec_info->stream_wr_ptr;
@@ -577,7 +577,7 @@ int wave5_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 		info->disp_pic_height = 0;
 	}
 
-	p_dec_info->stream_rd_ptr = wave5_dec_get_rd_ptr(inst);
+	p_dec_info->stream_rd_ptr = wave4_dec_get_rd_ptr(inst);
 	p_dec_info->frame_display_flag = vpu_read_reg(vpu_dev, W5_RET_DEC_DISP_IDC);
 
 	val = p_dec_info->num_of_decoding_fbs; //fb_offset
@@ -624,7 +624,7 @@ int wave5_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index)
 	ret = mutex_lock_interruptible(&vpu_dev->hw_lock);
 	if (ret)
 		return ret;
-	ret = wave5_dec_clr_disp_flag(inst, index);
+	ret = wave4_dec_clr_disp_flag(inst, index);
 	mutex_unlock(&vpu_dev->hw_lock);
 
 	return ret;
@@ -642,7 +642,7 @@ int wave5_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index)
 	ret = mutex_lock_interruptible(&vpu_dev->hw_lock);
 	if (ret)
 		return ret;
-	ret = wave5_dec_set_disp_flag(inst, index);
+	ret = wave4_dec_set_disp_flag(inst, index);
 	mutex_unlock(&vpu_dev->hw_lock);
 
 	return ret;
