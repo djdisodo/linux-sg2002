@@ -263,6 +263,13 @@ static void flag_last_buffer_done(struct vpu_instance *inst)
 
 	lockdep_assert_held(&inst->state_spinlock);
 
+	/*
+	 * LAST handling is one-shot. If already stopped (or queued for the next
+	 * capture buffer), avoid touching the ready queue again.
+	 */
+	if (v4l2_m2m_has_stopped(m2m_ctx) || m2m_ctx->next_buf_last)
+		return;
+
 	vb = v4l2_m2m_dst_buf_remove(m2m_ctx);
 	if (!vb) {
 		m2m_ctx->is_draining = true;
@@ -1651,27 +1658,28 @@ static void wave5_vpu_dec_device_run(void *priv)
 	}
 
 	switch (inst->state) {
-	case VPU_INST_STATE_OPEN:
-		ret = initialize_sequence(inst);
-		if (ret) {
-			unsigned long flags;
+		case VPU_INST_STATE_OPEN:
+			ret = initialize_sequence(inst);
+			if (ret) {
+				unsigned long flags;
 
-			spin_lock_irqsave(&inst->state_spinlock, flags);
-			if (wave5_is_draining_or_eos(inst) &&
-			    wave5_last_src_buffer_consumed(m2m_ctx)) {
-				struct vb2_queue *dst_vq = v4l2_m2m_get_dst_vq(m2m_ctx);
+				spin_lock_irqsave(&inst->state_spinlock, flags);
+				if (wave5_is_draining_or_eos(inst) &&
+				    wave5_last_src_buffer_consumed(m2m_ctx) &&
+				    !v4l2_m2m_has_stopped(m2m_ctx)) {
+					struct vb2_queue *dst_vq = v4l2_m2m_get_dst_vq(m2m_ctx);
 
-				switch_state(inst, VPU_INST_STATE_STOP);
+					switch_state(inst, VPU_INST_STATE_STOP);
 
-				if (vb2_is_streaming(dst_vq))
-					send_eos_event(inst);
-				else
-					handle_dynamic_resolution_change(inst);
-
-				flag_last_buffer_done(inst);
-			}
-			spin_unlock_irqrestore(&inst->state_spinlock, flags);
-		} else {
+					if (vb2_is_streaming(dst_vq)) {
+						send_eos_event(inst);
+						flag_last_buffer_done(inst);
+					} else {
+						handle_dynamic_resolution_change(inst);
+					}
+				}
+				spin_unlock_irqrestore(&inst->state_spinlock, flags);
+			} else {
 			set_instance_state(inst, VPU_INST_STATE_INIT_SEQ);
 		}
 
