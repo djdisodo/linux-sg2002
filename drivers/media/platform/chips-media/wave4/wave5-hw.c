@@ -9,6 +9,7 @@
 #include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/ktime.h>
+#include <linux/moduleparam.h>
 #include <linux/reset.h>
 #include "wave5-vpu.h"
 #include "wave5.h"
@@ -105,15 +106,42 @@
 #define W4_CMD_ENC_RC_TRANS_RATE		(W5_REG_BASE + 0x01BC)
 #define W4_CMD_ENC_RC_TARGET_RATE		(W5_REG_BASE + 0x01C0)
 #define W4_CMD_ENC_ROT_PARAM		(W5_REG_BASE + 0x01C4)
+#define W4_CMD_DEC_ADDR_REPORT_BASE	(W5_REG_BASE + 0x015C)
+#define W4_CMD_DEC_REPORT_SIZE		(W5_REG_BASE + 0x0160)
+#define W4_CMD_DEC_REPORT_PARAM		(W5_REG_BASE + 0x0164)
+#define W4_CMD_DEC_ADDR_USER_BASE	(W5_REG_BASE + 0x0168)
+#define W4_CMD_DEC_USER_SIZE		(W5_REG_BASE + 0x016C)
+#define W4_CMD_DEC_USER_PARAM		(W5_REG_BASE + 0x0170)
 #define W4_CMD_DEC_USER_MASK		(W5_REG_BASE + 0x0174)
+#define W4_CMD_DEC_SEVERITY_LEVEL	(W5_REG_BASE + 0x0178)
+#define W4_CMD_DEC_VCORE_LIMIT		(W5_REG_BASE + 0x017C)
 #define W4_CMD_DEC_TEMPORAL_ID_PLUS1	(W5_REG_BASE + 0x018C)
 #define W4_CMD_DEC_FORCE_FB_LATENCY_PLUS1	(W5_REG_BASE + 0x0188)
+#define W4_CMD_DEC_DISP_FLAG		(W5_REG_BASE + 0x0190)
 #define W4_CMD_SEQ_CHANGE_ENABLE_FLAG	(W5_REG_BASE + 0x0194)
+#define W4_RET_DEC_DISP_FLAG		(W5_REG_BASE + 0x0190)
+#define W4_RET_DEC_SEQ_PARAM		(W5_REG_BASE + 0x0198)
+#define W4_RET_DEC_COLOR_SAMPLE_INFO	(W5_REG_BASE + 0x01A0)
+#define W4_RET_DEC_CROP_TOP_BOTTOM	(W5_REG_BASE + 0x01B4)
+#define W4_RET_DEC_CROP_LEFT_RIGHT	(W5_REG_BASE + 0x01B8)
+#define W4_RET_DEC_PIC_SIZE		(W5_REG_BASE + 0x01BC)
+#define W4_RET_DEC_FRAMEBUF_NEEDED	(W5_REG_BASE + 0x01C0)
+#define W4_RET_DEC_SEQ_CHANGE_FLAG	(W5_REG_BASE + 0x01C4)
+#define W4_RET_TEMP_SUB_LAYER_INFO	(W5_REG_BASE + 0x01D0)
+#define W4_RET_FRAME_CYCLE		(W5_REG_BASE + 0x01D4)
+#define W4_RET_DEC_WARN_INFO		(W5_REG_BASE + 0x01D8)
+#define W4_RET_DEC_DECODED_INDEX	(W5_REG_BASE + 0x01E0)
+#define W4_RET_DEC_DISPLAY_INDEX	(W5_REG_BASE + 0x01E4)
+#define W4_RET_DEC_PIC_TYPE		(W5_REG_BASE + 0x01E8)
+#define W4_RET_DEC_PIC_POC		(W5_REG_BASE + 0x01EC)
+#define W4_RET_DEC_ERR_INFO		(W5_REG_BASE + 0x01F4)
 
 #define W4_RET_ENC_MIN_FB_NUM		(W5_REG_BASE + 0x01CC)
 #define W4_RET_ENC_MIN_SRC_BUF_NUM	(W5_REG_BASE + 0x01D8)
 #define W4_ENC_SET_PARAM_ENABLE_ALL	0xffffffff
 #define W4_BS_PARAM_ENABLE_RINGBUFFER	BIT(9)
+#define W4_USER_DATA_ENDIAN_LITTLE	0x0
+#define W4_REPORT_ENDIAN_LE_WORD_BYTE_SWAP	0x3
 /* Wave4 command IDs. */
 #define W4_CMD_INIT_VPU		0x0001
 #define W4_CMD_DEC_PIC_HDR_SET_PARAM	0x0002
@@ -127,10 +155,76 @@
 #define W4_CMD_WAKEUP_VPU		0x0800
 #define W4_CMD_CREATE_INSTANCE	0x4000
 #define W4_RESET_ALL_BLOCKS		0x07ffffff
+#define W4_CODEC_MODE_HEVC_DEC	0x00
+#define W4_CODEC_MODE_HEVC_ENC	0x01
+#define W4_CODEC_MODE_AVC_DEC	0x10
+#define W4_CODEC_MODE_AVC_ENC	0x88
 
 static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
 				 const char *func);
 #define PRINT_REG_ERR(dev, reason)	_wave5_print_reg_err((dev), (reason), __func__)
+
+static int wave4_init_seq_dump_regs;
+module_param_named(w4_init_seq_dump_regs, wave4_init_seq_dump_regs, int, 0644);
+MODULE_PARM_DESC(w4_init_seq_dump_regs,
+		 "Wave4 debug: dump full INIT_SEQ register snapshot before DEC_PIC_HDR");
+
+static int wave4_allow_resident_fw_fallback = 1;
+module_param_named(w4_allow_resident_fw_fallback, wave4_allow_resident_fw_fallback, int, 0644);
+MODULE_PARM_DESC(w4_allow_resident_fw_fallback,
+		 "Allow using already-running resident firmware when INIT_VPU times out (1=default, 0=force failure)");
+
+static int wave4_vint_enable_mask = -1;
+module_param_named(w4_vint_enable_mask, wave4_vint_enable_mask, int, 0644);
+MODULE_PARM_DESC(w4_vint_enable_mask,
+		 "Override W4_VPU_VINT_ENABLE mask (-1=BSP default bits 1/3/9/10/15)");
+
+static int wave4_bs_endian_override = -1;
+module_param_named(w4_bs_endian_override, wave4_bs_endian_override, int, 0644);
+MODULE_PARM_DESC(w4_bs_endian_override,
+		 "Override W4_BS_PARAM endian nibble (-1=use default 0xF)");
+
+static int wave4_bs_option_override = -1;
+module_param_named(w4_bs_option_override, wave4_bs_option_override, int, 0644);
+MODULE_PARM_DESC(w4_bs_option_override,
+		 "Override W4_BS_OPTION value (-1=auto from stream_endflag)");
+
+static int wave4_dec_sec_axi_mask_override = -1;
+module_param_named(w4_dec_sec_axi_mask, wave4_dec_sec_axi_mask_override, int, 0644);
+MODULE_PARM_DESC(w4_dec_sec_axi_mask,
+		 "Override decoded W4_USE_SEC_AXI mask (-1=auto, 0=force off)");
+
+static u32 wave4_resolve_bs_endian_nibble(void)
+{
+	if (READ_ONCE(wave4_bs_endian_override) >= 0)
+		return (u32)READ_ONCE(wave4_bs_endian_override) & 0xf;
+
+	/* Keep the proven Wave4 baseline fixed: 128-bit big-endian nibble. */
+	return BITSTREAM_ENDIANNESS_BIG_ENDIAN;
+}
+
+static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
+{
+	if (READ_ONCE(wave4_dec_sec_axi_mask_override) >= 0)
+		return (u32)READ_ONCE(wave4_dec_sec_axi_mask_override);
+
+	return sec_axi;
+}
+
+static inline u32 wave4_cmd_addr(dma_addr_t addr)
+{
+	return (u32)addr;
+}
+
+static inline u32 wave4_bs_addr(dma_addr_t addr)
+{
+	return wave4_cmd_addr(addr);
+}
+
+static u32 wave4_bs_ptr_reg_value(dma_addr_t ptr)
+{
+	return wave4_bs_addr(ptr);
+}
 
 static u32 wave4_translate_command(u32 cmd)
 {
@@ -216,6 +310,41 @@ static inline u32 wave5_dec_seq_change_reg(struct vpu_device *vpu_dev)
 	return W4_CMD_SEQ_CHANGE_ENABLE_FLAG;
 }
 
+static void wave4_log_init_seq_regs(struct vpu_instance *inst, const char *tag)
+{
+	if (!READ_ONCE(wave4_init_seq_dump_regs))
+		return;
+
+	dev_info(inst->dev->dev,
+		 "w4 init-seq %s: bs[start=0x%x size=0x%x param=0x%x opt=0x%x rd=0x%x wr=0x%x] sec_axi[use=0x%x addr=0x%x size=0x%x] work[base=0x%x size=0x%x param=0x%x] temp[base=0x%x size=0x%x param=0x%x] user[mask=0x%x base=0x%x size=0x%x param=0x%x] report[base=0x%x size=0x%x param=0x%x] disp=0x%x cmd_opt=0x%x inst=0x%x\n",
+		 tag,
+		 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
+		 vpu_read_reg(inst->dev, W4_BS_SIZE),
+		 vpu_read_reg(inst->dev, W4_BS_PARAM),
+		 vpu_read_reg(inst->dev, W4_BS_OPTION),
+		 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+		 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
+		 vpu_read_reg(inst->dev, W4_USE_SEC_AXI),
+		 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
+		 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
+		 vpu_read_reg(inst->dev, W4_ADDR_WORK_BASE),
+		 vpu_read_reg(inst->dev, W4_WORK_SIZE),
+		 vpu_read_reg(inst->dev, W4_WORK_PARAM),
+		 vpu_read_reg(inst->dev, W4_ADDR_TEMP_BASE),
+		 vpu_read_reg(inst->dev, W4_TEMP_SIZE),
+		 vpu_read_reg(inst->dev, W4_TEMP_PARAM),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_MASK),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_ADDR_USER_BASE),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_SIZE),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_PARAM),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_ADDR_REPORT_BASE),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_REPORT_SIZE),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_REPORT_PARAM),
+		 vpu_read_reg(inst->dev, W4_CMD_DEC_DISP_FLAG),
+		 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+		 vpu_read_reg(inst->dev, W4_INST_INDEX));
+}
+
 static inline const char *cmd_to_str(int cmd, bool is_dec)
 {
 	switch (cmd) {
@@ -252,6 +381,22 @@ static inline const char *cmd_to_str(int cmd, bool is_dec)
 	}
 }
 
+static u32 wave4_codec_mode(enum wave_std std)
+{
+	switch (std) {
+	case W_HEVC_DEC:
+		return W4_CODEC_MODE_HEVC_DEC;
+	case W_HEVC_ENC:
+		return W4_CODEC_MODE_HEVC_ENC;
+	case W_AVC_DEC:
+		return W4_CODEC_MODE_AVC_DEC;
+	case W_AVC_ENC:
+		return W4_CODEC_MODE_AVC_ENC;
+	default:
+		return std;
+	}
+}
+
 static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
 				 const char *func)
 {
@@ -260,8 +405,12 @@ static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 
 	switch (reg_fail_reason) {
 	case WAVE5_SYSERR_QUEUEING_FAIL:
+		if (vpu_dev->product == PRODUCT_ID_W4) {
+			dev_warn(dev, "%s: codec error class: 0x%x\n", func, reg_fail_reason);
+			break;
+		}
 		reg_val = vpu_read_reg(vpu_dev, W5_RET_QUEUE_FAIL_REASON);
-		dev_dbg(dev, "%s: queueing failure: 0x%x\n", func, reg_val);
+		dev_warn(dev, "%s: queueing failure detail: 0x%x\n", func, reg_val);
 		break;
 	case WAVE5_SYSERR_RESULT_NOT_READY:
 		dev_dbg(dev, "%s: result not ready: 0x%x\n", func, reg_fail_reason);
@@ -279,6 +428,10 @@ static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 		dev_err(dev, "%s: double fault: 0x%x\n", func, reg_fail_reason);
 		break;
 	case WAVE5_SYSERR_VPU_STILL_RUNNING:
+		if (vpu_dev->product == PRODUCT_ID_W4) {
+			dev_err(dev, "%s: access violation: 0x%x\n", func, reg_fail_reason);
+			break;
+		}
 		dev_err(dev, "%s: still running: 0x%x\n", func, reg_fail_reason);
 		break;
 	case WAVE5_SYSERR_VLC_BUF_FULL:
@@ -318,6 +471,23 @@ static int wave5_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
 	return -ETIMEDOUT;
 }
 
+static u32 wave5_fio_readl(struct vpu_device *vpu_dev, unsigned int addr)
+{
+	unsigned int ctrl;
+	int ret;
+
+	ctrl = FIELD_GET(FASTIO_ADDRESS_MASK, addr);
+	wave5_vdi_write_register(vpu_dev, W5_VPU_FIO_CTRL_ADDR, ctrl);
+	ret = read_poll_timeout(wave5_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
+				FIO_TIMEOUT, false, vpu_dev, W5_VPU_FIO_CTRL_ADDR);
+	if (ret) {
+		dev_warn_ratelimited(vpu_dev->dev, "FIO read timeout: addr=0x%x\n", addr);
+		return 0;
+	}
+
+	return wave5_vdi_read_register(vpu_dev, W5_VPU_FIO_DATA);
+}
+
 static void wave5_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsigned int data)
 {
 	int ret;
@@ -332,6 +502,70 @@ static void wave5_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsi
 	if (ret)
 		dev_dbg_ratelimited(vpu_dev->dev, "FIO write timeout: addr=0x%x data=%x\n",
 				    ctrl, data);
+}
+
+#define W4_DBG_INFO_CTRL_ADDR	0x8074
+#define W4_DBG_INFO_DATA_ADDR	0x8078
+#define W4_DBG_INFO_READY_ADDR	0x807c
+
+struct wave4_dbg_probe {
+	u16 idx;
+	const char *name;
+};
+
+static bool wave4_read_dbg_probe(struct vpu_device *vpu_dev, u16 idx, u32 *value)
+{
+	u32 ready;
+	int ret;
+
+	wave5_fio_writel(vpu_dev, W4_DBG_INFO_CTRL_ADDR, BIT(20) | BIT(16) | idx);
+	ret = read_poll_timeout(wave5_fio_readl, ready, ready & BIT(0), 0, FIO_TIMEOUT,
+				false, vpu_dev, W4_DBG_INFO_READY_ADDR);
+	if (ret)
+		return false;
+
+	*value = wave5_fio_readl(vpu_dev, W4_DBG_INFO_DATA_ADDR);
+	return true;
+}
+
+static void wave4_dump_dbg_probes(struct vpu_instance *inst)
+{
+	/*
+	 * BSP sample/debug code probes these decoder internals through
+	 * CDBG_INFO_CONTROL/DATA/READY (0x8074/0x8078/0x807c).
+	 * Keep these logs to cross-check parser/SDMA state against BSP.
+	 */
+	static const struct wave4_dbg_probe probes[] = {
+		{ 0x120, "sdma_load_cmd" },
+		{ 0x121, "sdma_auro_mode" },
+		{ 0x122, "sdma_base_addr" },
+		{ 0x123, "sdma_enc_addr" },
+		{ 0x124, "sdma_endian" },
+		{ 0x126, "sdma_busy" },
+		{ 0x127, "sdma_last_addr" },
+		{ 0x129, "sdma_rd_sel" },
+		{ 0x130, "sdma_wr_sel" },
+		{ 0x13b, "gdi_err_pri3_0" },
+		{ 0x13c, "gdi_err_pri0_2d" },
+		{ 0x143, "shu_status" },
+		{ 0x14c, "shu_sbyte_low" },
+		{ 0x14d, "shu_sbyte_high" },
+	};
+	u32 value;
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(probes); i++) {
+		if (!wave4_read_dbg_probe(inst->dev, probes[i].idx, &value)) {
+			dev_warn(inst->dev->dev,
+				 "w4 dbg probe timeout: %s[0x%x]\n",
+				 probes[i].name, probes[i].idx);
+			continue;
+		}
+
+		dev_warn(inst->dev->dev,
+			 "w4 dbg probe: %s[0x%x]=0x%x\n",
+			 probes[i].name, probes[i].idx, value);
+	}
 }
 
 static int wave5_wait_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
@@ -382,7 +616,7 @@ static void wave5_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_insta
 
 	if (inst) {
 		instance_index = inst->id;
-		codec_mode = inst->std;
+		codec_mode = wave4_codec_mode(inst->std);
 	}
 
 	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
@@ -395,7 +629,9 @@ static void wave5_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_insta
 	vpu_write_reg(vpu_dev, W5_COMMAND, hw_cmd);
 
 	if (inst) {
-		dev_dbg(vpu_dev->dev, "%s: cmd=0x%x hw=0x%x (%s)\n", __func__, cmd, hw_cmd,
+		dev_dbg(vpu_dev->dev,
+			"%s: cmd=0x%x hw=0x%x inst_idx=0x%x codec_mode=0x%x (%s)\n",
+			__func__, cmd, hw_cmd, instance_index, codec_mode,
 			cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 	} else {
 		dev_dbg(vpu_dev->dev, "%s: cmd=0x%x hw=0x%x\n", __func__, cmd, hw_cmd);
@@ -413,21 +649,27 @@ static int wave5_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 	/* Check if we were able to add a command into the VCPU QUEUE */
 	if (!vpu_read_reg(dev, W4_RET_SUCCESS)) {
 		reason = vpu_read_reg(dev, W4_RET_FAIL_REASON);
+		dev_warn(dev->dev,
+			 "%s: queue check failed: reason=0x%x cmd=0x%x inst=0x%x cmd_opt=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
+			 __func__, reason,
+			 vpu_read_reg(dev, W5_COMMAND),
+			 vpu_read_reg(dev, W4_INST_INDEX),
+			 vpu_read_reg(dev, W4_COMMAND_OPTION),
+			 vpu_read_reg(dev, W5_VPU_BUSY_STATUS),
+			 vpu_read_reg(dev, W5_VPU_VPU_INT_STS),
+			 vpu_read_reg(dev, W5_VPU_VINT_REASON),
+			 vpu_read_reg(dev, W5_VPU_VINT_REASON_USR),
+			 vpu_read_reg(dev, W5_VCPU_CUR_PC));
 		PRINT_REG_ERR(dev, reason);
 
-		/*
-		 * The fail_res argument will be either NULL or 0.
-		 * If the fail_res argument is NULL, then just return -EIO.
-		 * Otherwise, assign the reason to fail_res, so that the
-		 * calling function can use it.
-		 */
 		if (fail_res)
 			*fail_res = reason;
-		else
-			return -EIO;
 
-		if (reason == WAVE5_SYSERR_VPU_STILL_RUNNING)
+		if (reason == WAVE5_SYSERR_VPU_STILL_RUNNING &&
+		    dev->product != PRODUCT_ID_W4)
 			return -EBUSY;
+
+		return -EIO;
 	}
 	return 0;
 }
@@ -437,12 +679,19 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 {
 	ktime_t start;
 	int ret;
+	u32 int_sts = vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS);
+	u32 reason = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
+	u32 reason_usr = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR);
 
-	if (vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS)) {
-		u32 reason = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
+	/*
+	 * Wave4 can leave VINT_REASON_USR latched even when INT_STS is 0.
+	 * Clear any stale reason before queueing a new command.
+	 */
+	if (int_sts || reason || reason_usr) {
+		u32 clear_reason = reason | reason_usr;
 
-		if (reason)
-			vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, reason);
+		if (clear_reason)
+			vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, clear_reason);
 		vpu_write_reg(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
 	}
 
@@ -490,7 +739,17 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 		if (!check_success)
 			return 0;
 
-		return wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+		ret = wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+		if (ret) {
+			dev_warn(inst->dev->dev,
+				 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
+				 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
+				 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
+				 vpu_read_reg(inst->dev, W5_COMMAND),
+				 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+				 vpu_read_reg(inst->dev, W4_INST_INDEX));
+		}
+		return ret;
 	}
 
 	ret = wave5_wait_vpu_busy(inst->dev, W5_VPU_BUSY_STATUS);
@@ -521,7 +780,17 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 	if (!check_success)
 		return 0;
 
-	return wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+	ret = wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+	if (ret) {
+		dev_warn(inst->dev->dev,
+			 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
+			 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
+			 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
+			 vpu_read_reg(inst->dev, W5_COMMAND),
+			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+			 vpu_read_reg(inst->dev, W4_INST_INDEX));
+	}
+	return ret;
 }
 
 static int wave5_send_query(struct vpu_device *vpu_dev, struct vpu_instance *inst,
@@ -546,7 +815,16 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 {
 	int ret;
 
-	wave5_bit_issue_command(vpu_dev, NULL, W4_CMD_GET_FW_VERSION);
+	/*
+	 * W4_CMD_GET_FW_VERSION (0x100) collides with W5_DEC_ENC_PIC in the
+	 * Wave5 command enum, so issue the raw Wave4 command directly.
+	 */
+	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
+	vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
+	vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
+	vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
+	vpu_write_reg(vpu_dev, W5_COMMAND, W4_CMD_GET_FW_VERSION);
+	vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
 
 	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
 	if (ret) {
@@ -560,6 +838,13 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 	}
 
 	if (!vpu_read_reg(vpu_dev, W4_RET_SUCCESS)) {
+		dev_warn(vpu_dev->dev,
+			 "w4 GET_FW_VERSION fail: ret_success=0 fail_reason=0x%x cmd=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
+			 vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
+			 vpu_read_reg(vpu_dev, W5_COMMAND),
+			 vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
+			 vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
+			 vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
 		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
 		return -EIO;
 	}
@@ -572,7 +857,11 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 
 static void setup_wave5_interrupts(struct vpu_device *vpu_dev)
 {
-	u32 reg_val = BIT(1) | BIT(3) | BIT(9) | BIT(15);
+	/* Wave4 BSP enables DEC_PIC_HDR/SET_PARAM, DEC_PIC, QUERY_DEC, SLEEP/WAKE and BSBUF_EMPTY. */
+	u32 reg_val = BIT(1) | BIT(3) | BIT(9) | BIT(10) | BIT(15);
+
+	if (READ_ONCE(wave4_vint_enable_mask) >= 0)
+		reg_val = (u32)READ_ONCE(wave4_vint_enable_mask);
 
 	return vpu_write_reg(vpu_dev, W5_VPU_VINT_ENABLE, reg_val);
 }
@@ -600,12 +889,8 @@ static int setup_wave5_properties(struct device *dev)
 
 	ret = wave4_get_fw_version(vpu_dev, &fw_revision);
 	if (ret) {
-		dev_warn(dev, "w4 GET_FW_VERSION ping failed: %d\n", ret);
-		/*
-		 * Some boot flows keep a functioning firmware that does not answer
-		 * GET_FW_VERSION reliably. Keep initialized state and proceed.
-		 */
-		return 0;
+		dev_err(dev, "w4 GET_FW_VERSION ping failed: %d\n", ret);
+		return ret;
 	}
 
 	dev_info(dev, "w4 resident firmware revision: %u\n", fw_revision);
@@ -692,14 +977,13 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 
 	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
 	vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-	vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
 	vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
 	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
 	if (ret) {
 		u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
 
 		dev_err(vpu_dev->dev, "VPU init(W5_VPU_REMAP_CORE_START) timeout\n");
-		if (vcpu_pc) {
+		if (vcpu_pc && READ_ONCE(wave4_allow_resident_fw_fallback)) {
 			dev_warn(vpu_dev->dev,
 				 "w4 init timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 				 vcpu_pc);
@@ -708,6 +992,10 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 			if (!ret)
 				vpu_dev->fw_running = true;
 			return ret;
+		} else if (vcpu_pc) {
+			dev_warn(vpu_dev->dev,
+				 "w4 init timeout with live VCPU (pc=0x%x), resident fallback disabled\n",
+				 vcpu_pc);
 		}
 		dev_err(vpu_dev->dev,
 			"w4 init timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
@@ -734,18 +1022,59 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 	return ret;
 }
 
+static int wave4_alloc_dec_workbuf(struct vpu_instance *inst)
+{
+	struct vpu_buf *work = &inst->codec_info->dec_info.vb_work;
+	struct vpu_buf *common = &inst->dev->common_mem;
+	int ret;
+
+	work->size = W4_DEC_WORKBUF_SIZE;
+	if (READ_ONCE(wave4_common_layout_mode)) {
+		int off_mb = READ_ONCE(wave4_common_work_offset_mb);
+		size_t off;
+
+		if (off_mb < 0)
+			return -EINVAL;
+
+		off = (size_t)off_mb * 1024 * 1024;
+
+		if (!common->vaddr || common->size < off + work->size)
+			return -ENOMEM;
+
+		work->daddr = common->daddr + off;
+		work->vaddr = (u8 *)common->vaddr + off;
+		work->from_common = true;
+
+		ret = wave5_vdi_clear_memory(inst->dev, work);
+		if (ret < 0)
+			memset(work, 0, sizeof(*work));
+
+		return ret < 0 ? ret : 0;
+	}
+
+	ret = wave5_vdi_allocate_dma_memory(inst->dev, work);
+	if (ret) {
+		memset(work, 0, sizeof(*work));
+		return ret;
+	}
+
+	ret = wave5_vdi_clear_memory(inst->dev, work);
+	if (ret < 0) {
+		wave5_vdi_free_dma_memory(inst->dev, work);
+		return ret;
+	}
+
+	return 0;
+}
+
 int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 				 struct dec_open_param *param)
 {
 	int ret;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	struct vpu_device *vpu_dev = inst->dev;
-	static const size_t w4_workbuf_fallback[] = {
-		W4_DEC_WORKBUF_SIZE,
-		2 * 1024 * 1024,
-		1 * 1024 * 1024,
-	};
-	unsigned int i;
+
+	(void)param;
 
 	p_dec_info->cycle_per_tick = 256;
 	if (vpu_dev->sram_buf.size) {
@@ -764,26 +1093,15 @@ int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 		return -EINVAL;
 	}
 
-	ret = -ENOMEM;
-	for (i = 0; i < ARRAY_SIZE(w4_workbuf_fallback); i++) {
-		p_dec_info->vb_work.size = w4_workbuf_fallback[i];
-		ret = wave5_vdi_allocate_dma_memory(inst->dev, &p_dec_info->vb_work);
-		if (!ret)
-			break;
-	}
+	ret = wave4_alloc_dec_workbuf(inst);
 	if (ret)
 		return ret;
-	if (p_dec_info->vb_work.size != W4_DEC_WORKBUF_SIZE)
-		dev_warn(vpu_dev->dev,
-			 "w4: reduced decoder workbuf to %zu bytes due contiguous allocation pressure\n",
-			 p_dec_info->vb_work.size);
 
-	wave5_vdi_clear_memory(inst->dev, &p_dec_info->vb_work);
 	/*
 	 * Wave4 keeps the CREATE_INSTANCE work-buffer programming in
 	 * this command window.
 	 */
-	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_dec_info->vb_work.daddr);
+	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, wave4_cmd_addr(p_dec_info->vb_work.daddr));
 	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_dec_info->vb_work.size);
 	vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 
@@ -836,52 +1154,120 @@ int wave4_vpu_hw_flush_instance(struct vpu_instance *inst)
 
 static u32 get_bitstream_options(struct dec_info *info)
 {
-	u32 bs_option = BSOPTION_ENABLE_EXPLICIT_END;
+	u32 bs_option = 0;
+
+	if (READ_ONCE(wave4_bs_option_override) >= 0)
+		return (u32)READ_ONCE(wave4_bs_option_override);
 
 	if (info->stream_endflag)
-		bs_option |= BSOPTION_HIGHLIGHT_STREAM_END;
+		bs_option |= BSOPTION_ENABLE_EXPLICIT_END |
+			     BSOPTION_HIGHLIGHT_STREAM_END;
 	return bs_option;
 }
+
+static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst);
 
 int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
-	u32 bs_option, cmd_option = INIT_SEQ_NORMAL;
+	u32 bs_param;
+	u32 bs_option;
+	u32 sec_axi;
+	dma_addr_t temp_base = inst->dev->common_mem.daddr + W4_MAX_CODE_BUF_SIZE;
 	u32 bs_rd_reg = wave5_dec_bs_rd_ptr_reg(inst->dev);
 	u32 bs_wr_reg = wave5_dec_bs_wr_ptr_reg(inst->dev);
 	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
-	u32 reg_val, fail_res;
-	int ret;
 
 	if (!inst->codec_info)
 		return -EINVAL;
 
-	vpu_write_reg(inst->dev, bs_rd_reg, p_dec_info->stream_rd_ptr);
-	vpu_write_reg(inst->dev, bs_wr_reg, p_dec_info->stream_wr_ptr);
+	dev_dbg(inst->dev->dev,
+		"%s: bs start=0x%llx size=0x%x rd=0x%llx wr=0x%llx\n",
+		__func__,
+		(unsigned long long)p_dec_info->stream_buf_start_addr,
+		p_dec_info->stream_buf_size,
+		(unsigned long long)p_dec_info->stream_rd_ptr,
+		(unsigned long long)p_dec_info->stream_wr_ptr);
 
-	vpu_write_reg(inst->dev, W4_BS_START_ADDR, p_dec_info->stream_buf_start_addr);
+	bs_param = W4_BS_PARAM_ENABLE_RINGBUFFER |
+		   wave4_resolve_bs_endian_nibble();
+	vpu_write_reg(inst->dev, W4_BS_PARAM, bs_param);
+	vpu_write_reg(inst->dev, W4_BS_START_ADDR,
+		      wave4_bs_addr(p_dec_info->stream_buf_start_addr));
 	vpu_write_reg(inst->dev, W4_BS_SIZE, p_dec_info->stream_buf_size);
-	vpu_write_reg(inst->dev, W4_BS_PARAM,
-		      W4_BS_PARAM_ENABLE_RINGBUFFER |
-		      BITSTREAM_ENDIANNESS_BIG_ENDIAN);
+	vpu_write_reg(inst->dev, bs_rd_reg,
+		      wave4_bs_ptr_reg_value(p_dec_info->stream_rd_ptr));
+	vpu_write_reg(inst->dev, bs_wr_reg,
+		      wave4_bs_ptr_reg_value(p_dec_info->stream_wr_ptr));
 
 	bs_option = get_bitstream_options(p_dec_info);
-
-	/* Wave4 requires RD_PTR_VALID_FLAG to consume the programmed RD pointer. */
-	bs_option |= BSOPTION_RD_PTR_VALID_FLAG;
-
 	vpu_write_reg(inst->dev, bs_opt_reg, bs_option);
 
-	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), cmd_option);
-	vpu_write_reg(inst->dev, wave5_dec_user_mask_reg(inst->dev),
-		      p_dec_info->user_data_enable);
+	dev_dbg(inst->dev->dev,
+		"%s: pre-issue bs_param=0x%x bs_opt=0x%x bs_rd=0x%x bs_wr=0x%x cmd_opt=0x%x\n",
+		__func__,
+		vpu_read_reg(inst->dev, W4_BS_PARAM),
+		vpu_read_reg(inst->dev, W4_BS_OPTION),
+		vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+		vpu_read_reg(inst->dev, W4_BS_WR_PTR),
+		INIT_SEQ_NORMAL);
+	if (inst->bitstream_vbuf.vaddr) {
+		u8 *bs_head = (u8 *)inst->bitstream_vbuf.vaddr;
 
-	ret = send_firmware_command(inst, W5_INIT_SEQ, true, &reg_val, &fail_res);
-	if (ret)
-		return ret;
+		dev_dbg(inst->dev->dev,
+			"%s: ring head bytes %*ph\n",
+			__func__, 16, bs_head);
+	}
 
-	p_dec_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_dec_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
+	/* Secondary AXI setup follows BSP PrepareDecodingPicture() order. */
+	sec_axi = (p_dec_info->sec_axi_info.use_bit_enable << 0) |
+		  (p_dec_info->sec_axi_info.use_ip_enable << 9) |
+		  (p_dec_info->sec_axi_info.use_lf_row_enable << 15);
+	sec_axi = wave4_apply_dec_sec_axi_mask(sec_axi);
+	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
+	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
+		      sec_axi ? inst->dev->sram_buf.size : 0);
+	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
+	dev_dbg(inst->dev->dev,
+		"%s: sec_axi=0x%x addr=0x%llx size=0x%zx\n",
+		__func__, sec_axi,
+		(unsigned long long)inst->dev->sram_buf.daddr,
+		inst->dev->sram_buf.size);
+
+	/* Work/temp buffers follow sec-axi, matching BSP ordering. */
+	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, wave4_cmd_addr(p_dec_info->vb_work.daddr));
+	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_dec_info->vb_work.size);
+	vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_ADDR_TEMP_BASE, wave4_cmd_addr(temp_base));
+	vpu_write_reg(inst->dev, W4_TEMP_SIZE, W4_TEMPBUF_SIZE);
+	vpu_write_reg(inst->dev, W4_TEMP_PARAM, 0);
+
+	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_MASK, p_dec_info->user_data_enable);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_ADDR_USER_BASE,
+		      wave4_cmd_addr(p_dec_info->user_data_buf_addr));
+	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_SIZE, p_dec_info->user_data_buf_size);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_PARAM, W4_USER_DATA_ENDIAN_LITTLE);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_SEVERITY_LEVEL, 0);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_DISP_FLAG, 0);
+
+	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), INIT_SEQ_NORMAL);
+	vpu_write_reg(inst->dev, wave5_dec_force_fb_latency_reg(inst->dev), 0);
+	wave4_log_init_seq_regs(inst, "pre");
+
+	/*
+	 * Match BSP flow: DEC_PIC_HDR is issued here without a BUSY wait.
+	 * Final success/failure is evaluated after interrupt in get_seq_info().
+	 */
+	/*
+	 * Match BSP Wave4 flow exactly for DEC_PIC_HDR:
+	 * issue command and return. Completion is handled by interrupt +
+	 * get_seq_info() in the caller.
+	 */
+	wave5_bit_issue_command(inst->dev, inst, W5_INIT_SEQ);
+
+	/* Wave420L does not provide reliable queue status fields for this path. */
+	p_dec_info->instance_queue_count = 0;
+	p_dec_info->report_queue_count = 0;
 
 	dev_dbg(inst->dev->dev, "%s: init seq sent (queue %u : %u)\n", __func__,
 		p_dec_info->instance_queue_count, p_dec_info->report_queue_count);
@@ -898,25 +1284,25 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 	p_dec_info->stream_rd_ptr = wave4_dec_get_rd_ptr(inst);
 	info->rd_ptr = p_dec_info->stream_rd_ptr;
 
-	p_dec_info->frame_display_flag = vpu_read_reg(inst->dev, W5_RET_DEC_DISP_IDC);
+	p_dec_info->frame_display_flag = vpu_read_reg(inst->dev, W4_RET_DEC_DISP_FLAG);
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_PIC_SIZE);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE);
 	info->pic_width = ((reg_val >> 16) & 0xffff);
 	info->pic_height = (reg_val & 0xffff);
-	info->min_frame_buffer_count = vpu_read_reg(inst->dev, W5_RET_DEC_NUM_REQUIRED_FB);
+	info->min_frame_buffer_count = vpu_read_reg(inst->dev, W4_RET_DEC_FRAMEBUF_NEEDED);
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_CROP_LEFT_RIGHT);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_CROP_LEFT_RIGHT);
 	info->pic_crop_rect.left = (reg_val >> 16) & 0xffff;
 	info->pic_crop_rect.right = reg_val & 0xffff;
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_CROP_TOP_BOTTOM);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_CROP_TOP_BOTTOM);
 	info->pic_crop_rect.top = (reg_val >> 16) & 0xffff;
 	info->pic_crop_rect.bottom = reg_val & 0xffff;
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_COLOR_SAMPLE_INFO);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_COLOR_SAMPLE_INFO);
 	info->luma_bitdepth = reg_val & 0xf;
 	info->chroma_bitdepth = (reg_val >> 4) & 0xf;
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_SEQ_PARAM);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_SEQ_PARAM);
 	profile_compatibility_flag = (reg_val >> 12) & 0xff;
 	info->profile = (reg_val >> 24) & 0x1f;
 
@@ -942,36 +1328,98 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 
 int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info)
 {
-	int ret;
-	u32 reg_val;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 
-	vpu_write_reg(inst->dev, W5_CMD_DEC_ADDR_REPORT_BASE, p_dec_info->user_data_buf_addr);
-	vpu_write_reg(inst->dev, W5_CMD_DEC_REPORT_SIZE, p_dec_info->user_data_buf_size);
-	vpu_write_reg(inst->dev, W5_CMD_DEC_REPORT_PARAM, REPORT_PARAM_ENDIANNESS_BIG_ENDIAN);
-
-	/* send QUERY cmd */
-	ret = wave5_send_query(inst->dev, inst, GET_RESULT);
-	if (ret)
-		return ret;
-
-	reg_val = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
-
-	p_dec_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_dec_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
+	p_dec_info->instance_queue_count = 0;
+	p_dec_info->report_queue_count = 0;
 
 	dev_dbg(inst->dev->dev, "%s: init seq complete (queue %u : %u)\n", __func__,
 		p_dec_info->instance_queue_count, p_dec_info->report_queue_count);
+	dev_dbg(inst->dev->dev,
+		"%s: seq regs succ=0x%x fail=0x%x err_w4=0x%x err_w5=0x%x pic_w4=0x%x pic_w5=0x%x bs_start=0x%x bs_size=0x%x bs_param=0x%x bs_opt=0x%x bs_rd=0x%x bs_wr=0x%x ret_rd=0x%x\n",
+		__func__,
+		vpu_read_reg(inst->dev, W4_RET_SUCCESS),
+		vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
+		vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO),
+		vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO),
+		vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE),
+		vpu_read_reg(inst->dev, W5_RET_DEC_PIC_SIZE),
+		vpu_read_reg(inst->dev, W4_BS_START_ADDR),
+		vpu_read_reg(inst->dev, W4_BS_SIZE),
+		vpu_read_reg(inst->dev, W4_BS_PARAM),
+		vpu_read_reg(inst->dev, W4_BS_OPTION),
+		vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+		vpu_read_reg(inst->dev, W4_BS_WR_PTR),
+		vpu_read_reg(inst->dev, W5_RET_DEC_BS_RD_PTR));
 
-	/* this is not a fatal error, set ret to -EIO but don't return immediately */
-	if (vpu_read_reg(inst->dev, W5_RET_DEC_DECODING_SUCCESS) != 1) {
-		info->seq_init_err_reason = vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO);
-		ret = -EIO;
+	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
+		u32 fail_reason;
+		u32 dec_err;
+		u32 dec_err_w5;
+		u32 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end;
+
+		wave4_log_init_seq_regs(inst, "fail");
+
+		/* Keep this explicit cross-bank dump for Wave4/Wave5 err-info parity checks. */
+		dec_err_w5 = vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO);
+		dev_warn(inst->dev->dev,
+			 "w4 seq-fail err banks: err_w4=0x%x err_w5=0x%x\n",
+			 vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO), dec_err_w5);
+
+		fio_bs_data = wave5_fio_readl(inst->dev, 0x8064);
+		fio_bus_busy = wave5_fio_readl(inst->dev, 0x8068);
+		fio_bit_pc = wave5_fio_readl(inst->dev, 0x8018);
+		fio_bs_start = wave5_fio_readl(inst->dev, 0x811c);
+		fio_bs_end = wave5_fio_readl(inst->dev, 0x8120);
+			dev_warn(inst->dev->dev,
+				 "w4 fio debug: bs_data=0x%x bus_busy=0x%x bit_pc=0x%x bs_start=0x%x bs_end=0x%x\n",
+				 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end);
+			wave4_dump_dbg_probes(inst);
+			if (inst->bitstream_vbuf.vaddr && p_dec_info->stream_buf_size) {
+				dma_addr_t bs_rd = vpu_read_reg(inst->dev, W4_BS_RD_PTR);
+				size_t rd_off = 0;
+				size_t dump_len;
+			u8 *ring = inst->bitstream_vbuf.vaddr;
+
+			if (bs_rd >= p_dec_info->stream_buf_start_addr &&
+			    bs_rd < p_dec_info->stream_buf_end_addr)
+				rd_off = bs_rd - p_dec_info->stream_buf_start_addr;
+			else if (bs_rd <= p_dec_info->stream_buf_size - 1)
+				rd_off = bs_rd;
+
+			if (rd_off >= inst->bitstream_vbuf.size)
+				rd_off = 0;
+
+			dump_len = min_t(size_t, 16, inst->bitstream_vbuf.size - rd_off);
+			dev_warn(inst->dev->dev,
+				 "w4 seq-fail ring bytes: start=%*ph rd[%#zx]=%*ph\n",
+				 16, ring, rd_off, (int)dump_len, ring + rd_off);
+		}
+
+		info->rd_ptr = wave4_dec_get_rd_ptr(inst);
+		fail_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
+		dec_err = vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO);
+		dev_warn(inst->dev->dev,
+			 "%s: seq init failed: fail_reason=0x%x dec_err=0x%x bs_start=0x%x bs_size=0x%x bs_param=0x%x bs_opt=0x%x bs_rd=0x%x bs_wr=0x%x\n",
+			 __func__, fail_reason, dec_err,
+			 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
+			 vpu_read_reg(inst->dev, W4_BS_SIZE),
+			 vpu_read_reg(inst->dev, W4_BS_PARAM),
+			 vpu_read_reg(inst->dev, W4_BS_OPTION),
+			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+			 vpu_read_reg(inst->dev, W4_BS_WR_PTR));
+		if (fail_reason == 1) {
+			info->seq_init_err_reason = dec_err;
+			return -EIO;
+		} else {
+			info->seq_init_err_reason = fail_reason;
+			return -EIO;
+		}
 	}
 
 	wave5_get_dec_seq_result(inst, info);
 
-	return ret;
+	return 0;
 }
 
 int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_buffer *fb_arr,
@@ -1156,24 +1604,41 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
 	int ret;
 
-	vpu_write_reg(inst->dev, bs_rd_reg, p_dec_info->stream_rd_ptr);
-	vpu_write_reg(inst->dev, bs_wr_reg, p_dec_info->stream_wr_ptr);
-
-	vpu_write_reg(inst->dev, W4_BS_START_ADDR, p_dec_info->stream_buf_start_addr);
-	vpu_write_reg(inst->dev, W4_BS_SIZE, p_dec_info->stream_buf_size);
 	vpu_write_reg(inst->dev, W4_BS_PARAM,
 		      W4_BS_PARAM_ENABLE_RINGBUFFER |
-		      BITSTREAM_ENDIANNESS_BIG_ENDIAN);
+		      wave4_resolve_bs_endian_nibble());
+	vpu_write_reg(inst->dev, W4_BS_START_ADDR,
+		      wave4_bs_addr(p_dec_info->stream_buf_start_addr));
+	vpu_write_reg(inst->dev, W4_BS_SIZE, p_dec_info->stream_buf_size);
+	vpu_write_reg(inst->dev, bs_rd_reg,
+		      wave4_bs_ptr_reg_value(p_dec_info->stream_rd_ptr));
+	vpu_write_reg(inst->dev, bs_wr_reg,
+		      wave4_bs_ptr_reg_value(p_dec_info->stream_wr_ptr));
 
 	vpu_write_reg(inst->dev, bs_opt_reg, get_bitstream_options(p_dec_info));
 
 	/* secondary AXI */
 	reg_val = wave5_vpu_dec_validate_sec_axi(inst);
-	vpu_write_reg(inst->dev, W5_USE_SEC_AXI, reg_val);
+	reg_val = wave4_apply_dec_sec_axi_mask(reg_val);
+	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, reg_val);
+	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
+	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
+		      reg_val ? inst->dev->sram_buf.size : 0);
 
 	/* set attributes of user buffer */
+	vpu_write_reg(inst->dev, W4_CMD_DEC_ADDR_REPORT_BASE,
+		      wave4_cmd_addr(p_dec_info->user_data_buf_addr));
+	vpu_write_reg(inst->dev, W4_CMD_DEC_REPORT_SIZE, p_dec_info->user_data_buf_size);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_REPORT_PARAM,
+		      W4_REPORT_ENDIAN_LE_WORD_BYTE_SWAP);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_ADDR_USER_BASE,
+		      wave4_cmd_addr(p_dec_info->user_data_buf_addr));
+	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_SIZE, p_dec_info->user_data_buf_size);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_PARAM, W4_USER_DATA_ENDIAN_LITTLE);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_SEVERITY_LEVEL, 0);
 	vpu_write_reg(inst->dev, wave5_dec_user_mask_reg(inst->dev),
 		      p_dec_info->user_data_enable);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_VCORE_LIMIT, 1);
 
 	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), DEC_PIC_NORMAL);
 	vpu_write_reg(inst->dev, wave5_dec_temp_id_reg(inst->dev),
@@ -1187,8 +1652,9 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	if (ret == -ETIMEDOUT)
 		return ret;
 
-	p_dec_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_dec_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
+	/* Wave420L does not provide reliable queue status fields for this path. */
+	p_dec_info->instance_queue_count = 0;
+	p_dec_info->report_queue_count = 0;
 
 	dev_dbg(inst->dev->dev, "%s: dec pic sent (queue %u : %u)\n", __func__,
 		p_dec_info->instance_queue_count, p_dec_info->report_queue_count);
@@ -1199,31 +1665,52 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	return 0;
 }
 
+static inline s32 wave4_unpack_dec_index(u32 packed, bool linear_idx)
+{
+	if (linear_idx)
+		return (s16)(packed >> 16);
+
+	return (s16)(packed & 0xffff);
+}
+
 int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *result)
 {
-	int ret;
 	u32 index, nal_unit_type, reg_val, sub_layer_info;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
-	struct vpu_device *vpu_dev = inst->dev;
+	bool linear_output = p_dec_info->num_of_display_fbs > 0;
+	u32 fail_reason;
+	u32 dec_err;
 
-	vpu_write_reg(inst->dev, W5_CMD_DEC_ADDR_REPORT_BASE, p_dec_info->user_data_buf_addr);
-	vpu_write_reg(inst->dev, W5_CMD_DEC_REPORT_SIZE, p_dec_info->user_data_buf_size);
-	vpu_write_reg(inst->dev, W5_CMD_DEC_REPORT_PARAM, REPORT_PARAM_ENDIANNESS_BIG_ENDIAN);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_ADDR_REPORT_BASE, p_dec_info->user_data_buf_addr);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_REPORT_SIZE, p_dec_info->user_data_buf_size);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_REPORT_PARAM,
+		      W4_REPORT_ENDIAN_LE_WORD_BYTE_SWAP);
 
-	/* send QUERY cmd */
-	ret = wave5_send_query(vpu_dev, inst, GET_RESULT);
-	if (ret)
-		return ret;
-
-	reg_val = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
-
-	p_dec_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_dec_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
+	/*
+	 * Wave420L returns DEC_PIC results directly on PIC_RUN completion.
+	 * Issuing GET_RESULT here can re-trigger PIC_RUN handling and spin.
+	 */
+	p_dec_info->instance_queue_count = 0;
+	p_dec_info->report_queue_count = 0;
 
 	dev_dbg(inst->dev->dev, "%s: dec pic complete (queue %u : %u)\n", __func__,
 		p_dec_info->instance_queue_count, p_dec_info->report_queue_count);
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_PIC_TYPE);
+	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
+		fail_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
+		dec_err = vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO);
+		dev_warn(inst->dev->dev,
+			 "%s: dec result failed: fail_reason=0x%x dec_err=0x%x\n",
+			 __func__, fail_reason, dec_err);
+		result->index_frame_display = DISPLAY_IDX_FLAG_NO_FB;
+		result->index_frame_decoded = DECODED_IDX_FLAG_NO_FB;
+		result->index_frame_decoded_for_tiled = DECODED_IDX_FLAG_NO_FB;
+		result->frame_display_flag = vpu_read_reg(inst->dev, W4_RET_DEC_DISP_FLAG);
+		result->sequence_changed = 0;
+		return -EIO;
+	}
+
+	reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_PIC_TYPE);
 
 	nal_unit_type = (reg_val >> 4) & 0x3f;
 
@@ -1251,26 +1738,35 @@ int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *
 		if (nal_unit_type == 5 && result->pic_type == PIC_TYPE_I)
 			result->pic_type = PIC_TYPE_IDR;
 	}
-	index = vpu_read_reg(inst->dev, W5_RET_DEC_DISPLAY_INDEX);
-	result->index_frame_display = index;
-	index = vpu_read_reg(inst->dev, W5_RET_DEC_DECODED_INDEX);
-	result->index_frame_decoded = index;
-	result->index_frame_decoded_for_tiled = index;
+	index = vpu_read_reg(inst->dev, W4_RET_DEC_DISPLAY_INDEX);
+	result->index_frame_display = wave4_unpack_dec_index(index, linear_output);
+	index = vpu_read_reg(inst->dev, W4_RET_DEC_DECODED_INDEX);
+	result->index_frame_decoded = wave4_unpack_dec_index(index, linear_output);
+	result->index_frame_decoded_for_tiled = wave4_unpack_dec_index(index, false);
 
-	sub_layer_info = vpu_read_reg(inst->dev, W5_RET_DEC_SUB_LAYER_INFO);
-	result->temporal_id = sub_layer_info & 0x7;
+	sub_layer_info = vpu_read_reg(inst->dev, W4_RET_TEMP_SUB_LAYER_INFO);
+	result->temporal_id = sub_layer_info & 0xff;
 
 	if (inst->std == W_HEVC_DEC || inst->std == W_AVC_DEC) {
 		result->decoded_poc = -1;
 		if (result->index_frame_decoded >= 0 ||
 		    result->index_frame_decoded == DECODED_IDX_FLAG_SKIP)
-			result->decoded_poc = vpu_read_reg(inst->dev, W5_RET_DEC_PIC_POC);
+			result->decoded_poc = vpu_read_reg(inst->dev, W4_RET_DEC_PIC_POC);
 	}
 
-	result->sequence_changed = vpu_read_reg(inst->dev, W5_RET_DEC_NOTIFICATION);
-	reg_val = vpu_read_reg(inst->dev, W5_RET_DEC_PIC_SIZE);
-	result->dec_pic_width = reg_val >> 16;
-	result->dec_pic_height = reg_val & 0xffff;
+	result->sequence_changed = vpu_read_reg(inst->dev, W4_RET_DEC_SEQ_CHANGE_FLAG) & 0x7fffffff;
+	if (!result->sequence_changed) {
+		reg_val = vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE);
+		result->dec_pic_width = reg_val >> 16;
+		result->dec_pic_height = reg_val & 0xffff;
+	} else if (result->index_frame_decoded < 0) {
+		result->dec_pic_width = 0;
+		result->dec_pic_height = 0;
+	} else {
+		result->dec_pic_width = p_dec_info->initial_info.pic_width;
+		result->dec_pic_height = p_dec_info->initial_info.pic_height;
+	}
+	result->frame_display_flag = vpu_read_reg(inst->dev, W4_RET_DEC_DISP_FLAG);
 
 	if (result->sequence_changed) {
 		memcpy((void *)&p_dec_info->new_seq_info, (void *)&p_dec_info->initial_info,
@@ -1278,29 +1774,10 @@ int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *
 		wave5_get_dec_seq_result(inst, &p_dec_info->new_seq_info);
 	}
 
-	result->dec_host_cmd_tick = vpu_read_reg(inst->dev, W5_RET_DEC_HOST_CMD_TICK);
-	result->dec_decode_end_tick = vpu_read_reg(inst->dev, W5_RET_DEC_DECODING_ENC_TICK);
-
-	if (!p_dec_info->first_cycle_check) {
-		result->frame_cycle =
-			(result->dec_decode_end_tick - result->dec_host_cmd_tick) *
-			p_dec_info->cycle_per_tick;
-		vpu_dev->last_performance_cycles = result->dec_decode_end_tick;
-		p_dec_info->first_cycle_check = true;
-	} else if (result->index_frame_decoded_for_tiled != -1) {
-		result->frame_cycle =
-			(result->dec_decode_end_tick - vpu_dev->last_performance_cycles) *
-			p_dec_info->cycle_per_tick;
-		vpu_dev->last_performance_cycles = result->dec_decode_end_tick;
-		if (vpu_dev->last_performance_cycles < result->dec_host_cmd_tick)
-			result->frame_cycle =
-				(result->dec_decode_end_tick - result->dec_host_cmd_tick) *
-				p_dec_info->cycle_per_tick;
-	}
-
-	/* no remaining command. reset frame cycle. */
-	if (p_dec_info->instance_queue_count == 0 && p_dec_info->report_queue_count == 0)
-		p_dec_info->first_cycle_check = false;
+	result->dec_host_cmd_tick = 0;
+	result->dec_decode_end_tick = 0;
+	result->frame_cycle = vpu_read_reg(inst->dev, W4_RET_FRAME_CYCLE);
+	p_dec_info->first_cycle_check = false;
 
 	return 0;
 }
@@ -1399,7 +1876,6 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 
 		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
 		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
 		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
 
 		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
@@ -1407,7 +1883,7 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 			u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
 
 			dev_err(vpu_dev->dev, "VPU reinit(W5_VPU_REMAP_CORE_START) timeout\n");
-			if (vcpu_pc) {
+			if (vcpu_pc && READ_ONCE(wave4_allow_resident_fw_fallback)) {
 				dev_warn(vpu_dev->dev,
 					 "w4 reinit timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 					 vcpu_pc);
@@ -1416,6 +1892,10 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 				if (!ret)
 					vpu_dev->fw_running = true;
 				return ret;
+			} else if (vcpu_pc) {
+				dev_warn(vpu_dev->dev,
+					 "w4 reinit timeout with live VCPU (pc=0x%x), resident fallback disabled\n",
+					 vcpu_pc);
 			}
 			dev_err(vpu_dev->dev,
 				"w4 reinit timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
@@ -1647,10 +2127,20 @@ int wave4_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
 	u32 bs_wr_reg = wave5_dec_bs_wr_ptr_reg(inst->dev);
+	bool running = (inst->state == VPU_INST_STATE_PIC_RUN);
 
 	p_dec_info->stream_endflag = eos ? 1 : 0;
+	/*
+	 * Match BSP Wave4 semantics:
+	 * update BS_OPTION only while decode is running (PIC_RUN path).
+	 * WR_PTR is host-owned and advanced through INIT/PIC command setup.
+	 */
+	if (!running)
+		return 0;
+
 	vpu_write_reg(inst->dev, bs_opt_reg, get_bitstream_options(p_dec_info));
-	vpu_write_reg(inst->dev, bs_wr_reg, p_dec_info->stream_wr_ptr);
+	vpu_write_reg(inst->dev, bs_wr_reg,
+		      wave4_bs_ptr_reg_value(p_dec_info->stream_wr_ptr));
 
 	/*
 	 * Wave4 updates bitstream state via register writes only.
@@ -1703,12 +2193,32 @@ int wave4_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags)
 
 dma_addr_t wave4_dec_get_rd_ptr(struct vpu_instance *inst)
 {
-	return vpu_read_reg(inst->dev, W4_BS_RD_PTR);
+	struct dec_info *p_dec_info;
+	dma_addr_t rd_ptr;
+	dma_addr_t start;
+	dma_addr_t end;
+
+	rd_ptr = vpu_read_reg(inst->dev, W4_BS_RD_PTR);
+	if (!inst->codec_info)
+		return rd_ptr;
+
+	p_dec_info = &inst->codec_info->dec_info;
+	if (!p_dec_info->stream_buf_size)
+		return rd_ptr;
+
+	start = p_dec_info->stream_buf_start_addr;
+	end = start + p_dec_info->stream_buf_size;
+
+	if (rd_ptr >= start && rd_ptr < end)
+		return rd_ptr;
+
+	return rd_ptr;
 }
 
 int wave4_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr)
 {
-	vpu_write_reg(inst->dev, W4_BS_RD_PTR, addr);
+	vpu_write_reg(inst->dev, W4_BS_RD_PTR,
+		      wave4_bs_ptr_reg_value(addr));
 	return 0;
 }
 
@@ -1929,7 +2439,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		vpu_write_reg(inst->dev, W4_BS_WR_PTR, p_enc_info->stream_wr_ptr);
 		vpu_write_reg(inst->dev, W4_BS_PARAM,
 			      (p_enc_info->line_buf_int_en << 6) |
-			      BITSTREAM_ENDIANNESS_BIG_ENDIAN);
+			      wave4_resolve_bs_endian_nibble());
 
 		sec_axi = 0;
 		if (inst->dev->sram_buf.size)
