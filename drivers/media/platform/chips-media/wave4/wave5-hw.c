@@ -106,6 +106,44 @@
 #define W4_CMD_ENC_RC_TRANS_RATE		(W5_REG_BASE + 0x01BC)
 #define W4_CMD_ENC_RC_TARGET_RATE		(W5_REG_BASE + 0x01C0)
 #define W4_CMD_ENC_ROT_PARAM		(W5_REG_BASE + 0x01C4)
+/* Encoder ENC_PIC (shares the same window as SET_PARAM). */
+#define W4_CMD_ENC_ADDR_REPORT_BASE	(W5_REG_BASE + 0x015C)
+#define W4_CMD_ENC_REPORT_SIZE		(W5_REG_BASE + 0x0160)
+#define W4_CMD_ENC_REPORT_PARAM		(W5_REG_BASE + 0x0164)
+#define W4_CMD_ENC_CODE_OPTION		(W5_REG_BASE + 0x0168)
+#define W4_CMD_ENC_PIC_PARAM		(W5_REG_BASE + 0x016C)
+#define W4_CMD_ENC_SRC_PIC_IDX		(W5_REG_BASE + 0x0170)
+#define W4_CMD_ENC_SRC_ADDR_Y		(W5_REG_BASE + 0x0174)
+#define W4_CMD_ENC_SRC_ADDR_U		(W5_REG_BASE + 0x0178)
+#define W4_CMD_ENC_SRC_ADDR_V		(W5_REG_BASE + 0x017C)
+#define W4_CMD_ENC_SRC_STRIDE		(W5_REG_BASE + 0x0180)
+#define W4_CMD_ENC_SRC_FORMAT		(W5_REG_BASE + 0x0184)
+#define W4_CMD_ENC_PREFIX_SEI_NAL_ADDR	(W5_REG_BASE + 0x0188)
+#define W4_CMD_ENC_PREFIX_SEI_INFO	(W5_REG_BASE + 0x018C)
+#define W4_CMD_ENC_SUFFIX_SEI_NAL_ADDR	(W5_REG_BASE + 0x0190)
+#define W4_CMD_ENC_SUFFIX_SEI_INFO	(W5_REG_BASE + 0x0194)
+#define W4_CMD_ENC_LONGTERM_PIC		(W5_REG_BASE + 0x0198)
+#define W4_CMD_ENC_SUB_FRAME_SYNC_CONFIG	(W5_REG_BASE + 0x019C)
+#define W4_CMD_ENC_CTU_OPT_PARAM	(W5_REG_BASE + 0x01A0)
+#define W4_CMD_ENC_ROI_ADDR_CTU_MAP	(W5_REG_BASE + 0x01A4)
+#define W4_CMD_ENC_CTU_MODE_MAP_ADDR	(W5_REG_BASE + 0x01A8)
+#define W4_CMD_ENC_CTU_QP_MAP_ADDR	(W5_REG_BASE + 0x01AC)
+#define W4_CMD_ENC_SRC_TIMESTAMP_LOW	(W5_REG_BASE + 0x01B0)
+#define W4_CMD_ENC_SRC_TIMESTAMP_HIGH	(W5_REG_BASE + 0x01B4)
+/* SET_FRAMEBUF register window (Wave4 layout). */
+#define W4_SFB_OPTION			(W5_REG_BASE + 0x010C)
+#define W4_COMMON_PIC_INFO		(W5_REG_BASE + 0x0120)
+#define W4_PIC_SIZE			(W5_REG_BASE + 0x0124)
+#define W4_SET_FB_NUM			(W5_REG_BASE + 0x0128)
+#define W4_ADDR_LUMA_BASE0		(W5_REG_BASE + 0x0160)
+#define W4_ADDR_CB_BASE0		(W5_REG_BASE + 0x0164)
+#define W4_ADDR_CR_BASE0		(W5_REG_BASE + 0x0168)
+#define W4_ADDR_FBC_Y_OFFSET0		(W5_REG_BASE + 0x0168)
+#define W4_ADDR_FBC_C_OFFSET0		(W5_REG_BASE + 0x016C)
+#define W4_FBC_STRIDE			(W5_REG_BASE + 0x0154)
+#define W4_ADDR_SUB_SAMPLED_FB_BASE	(W5_REG_BASE + 0x0158)
+#define W4_SUB_SAMPLED_ONE_FB_SIZE	(W5_REG_BASE + 0x015C)
+#define W4_ADDR_MV_COL0			(W5_REG_BASE + 0x01E0)
 #define W4_CMD_DEC_ADDR_REPORT_BASE	(W5_REG_BASE + 0x015C)
 #define W4_CMD_DEC_REPORT_SIZE		(W5_REG_BASE + 0x0160)
 #define W4_CMD_DEC_REPORT_PARAM		(W5_REG_BASE + 0x0164)
@@ -138,6 +176,11 @@
 
 #define W4_RET_ENC_MIN_FB_NUM		(W5_REG_BASE + 0x01CC)
 #define W4_RET_ENC_MIN_SRC_BUF_NUM	(W5_REG_BASE + 0x01D8)
+#define W4_RET_ENC_PIC_IDX		(W5_REG_BASE + 0x01A8)
+#define W4_RET_ENC_PIC_BYTE		(W5_REG_BASE + 0x01C8)
+#define W4_RET_ENC_USED_SRC_IDX		(W5_REG_BASE + 0x01D8)
+#define W4_RET_ENC_PIC_TYPE		(W5_REG_BASE + 0x01E0)
+#define W4_RET_ENC_VCL_NUT		(W5_REG_BASE + 0x01E4)
 #define W4_ENC_SET_PARAM_ENABLE_ALL	0xffffffff
 #define W4_BS_PARAM_ENABLE_RINGBUFFER	BIT(9)
 #define W4_USER_DATA_ENDIAN_LITTLE	0x0
@@ -194,6 +237,11 @@ module_param_named(w4_dec_sec_axi_mask, wave4_dec_sec_axi_mask_override, int, 06
 MODULE_PARM_DESC(w4_dec_sec_axi_mask,
 		 "Override decoded W4_USE_SEC_AXI mask (-1=auto, 0=force off)");
 
+static int wave4_enc_sec_axi_mask_override = -1;
+module_param_named(w4_enc_sec_axi_mask, wave4_enc_sec_axi_mask_override, int, 0644);
+MODULE_PARM_DESC(w4_enc_sec_axi_mask,
+		 "Override encoder W4_USE_SEC_AXI mask (-1=auto, 0=force off)");
+
 static u32 wave4_resolve_bs_endian_nibble(void)
 {
 	if (READ_ONCE(wave4_bs_endian_override) >= 0)
@@ -207,6 +255,14 @@ static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
 {
 	if (READ_ONCE(wave4_dec_sec_axi_mask_override) >= 0)
 		return (u32)READ_ONCE(wave4_dec_sec_axi_mask_override);
+
+	return sec_axi;
+}
+
+static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
+{
+	if (READ_ONCE(wave4_enc_sec_axi_mask_override) >= 0)
+		return (u32)READ_ONCE(wave4_enc_sec_axi_mask_override);
 
 	return sec_axi;
 }
@@ -649,6 +705,21 @@ static int wave5_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 	/* Check if we were able to add a command into the VCPU QUEUE */
 	if (!vpu_read_reg(dev, W4_RET_SUCCESS)) {
 		reason = vpu_read_reg(dev, W4_RET_FAIL_REASON);
+
+		/*
+		 * Wave4 can report SKIP_MODE_ENABLE on commands that are
+		 * otherwise accepted in the legacy W4 flow (e.g. SET_FB,
+		 * DESTROY_INSTANCE). Treat it as non-fatal here.
+		 */
+		if (reason == WAVE5_CMDQ_ERR_SKIP_MODE_ENABLE) {
+			if (fail_res)
+				*fail_res = reason;
+			dev_dbg(dev->dev,
+				"%s: ignoring W4 queue reason=0x%x for cmd=0x%x\n",
+				__func__, reason, vpu_read_reg(dev, W5_COMMAND));
+			return 0;
+		}
+
 		dev_warn(dev->dev,
 			 "%s: queue check failed: reason=0x%x cmd=0x%x inst=0x%x cmd_opt=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
 			 __func__, reason,
@@ -697,40 +768,63 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 
 	wave5_bit_issue_command(inst->dev, inst, cmd);
 
-	/* SET_PARAM completion is interrupt-driven in the Wave4 flow. */
+	/*
+	 * SET_PARAM is interrupt-driven in Wave4 BSP, but our IRQ handler can
+	 * consume/clear VINT before this synchronous path polls it. Accept BUSY
+	 * deassertion as a completion fallback to avoid false timeouts.
+	 */
 	if (cmd == W5_ENC_SET_PARAM) {
+		bool completed_via_busy = false;
+
 		start = ktime_get();
 		for (;;) {
-			u32 int_sts = vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS);
-			u32 reason = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
+			u32 busy_now;
+			u32 int_sts_now = vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS);
+			u32 reason_now = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
+			u32 reason_usr_now = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR);
 
-			if (int_sts) {
-				if (reason)
-					vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, reason);
+			if (reason_usr_now || (int_sts_now && reason_now)) {
+				u32 clear_reason = reason_now ? reason_now : reason_usr_now;
+
+				if (clear_reason)
+					vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, clear_reason);
 				vpu_write_reg(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
-				if (reason)
-					break;
+				break;
 			}
 
-				if (ktime_to_us(ktime_sub(ktime_get(), start)) > VPU_BUSY_CHECK_TIMEOUT) {
-					dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
-						 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
-					dev_warn(inst->dev->dev,
-						 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-						 vpu_read_reg(inst->dev, W5_COMMAND),
-						 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-						 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
+			busy_now = vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS);
+			if (!busy_now) {
+				completed_via_busy = true;
+				break;
+			}
+
+			if (ktime_to_us(ktime_sub(ktime_get(), start)) > VPU_BUSY_CHECK_TIMEOUT) {
+				dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
+					 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
+				dev_warn(inst->dev->dev,
+					 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_en=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
+					 vpu_read_reg(inst->dev, W5_COMMAND),
+					 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
+					 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
 					 vpu_read_reg(inst->dev, W4_RET_SUCCESS),
 					 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
 					 vpu_read_reg(inst->dev, W4_INST_INDEX),
 					 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
+					 vpu_read_reg(inst->dev, W5_VPU_VINT_ENABLE),
 					 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
 					 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
+					 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR),
 					 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC));
 				return -ETIMEDOUT;
 			}
 
 			usleep_range(500, 1000);
+		}
+
+		if (completed_via_busy) {
+			dev_dbg(inst->dev->dev,
+				"%s: cmd '%s' completed via BUSY fallback (reason already consumed)\n",
+				__func__, cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 		}
 
 		if (queue_status)
@@ -2445,6 +2539,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		if (inst->dev->sram_buf.size)
 			sec_axi = (p_enc_info->sec_axi_info.use_enc_rdo_enable << 11) |
 				  (p_enc_info->sec_axi_info.use_enc_lf_enable << 15);
+		sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 		vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI,
 			      inst->dev->sram_buf.daddr);
 		vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
@@ -2790,7 +2885,6 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	struct vpu_buf vb_fbc_y_tbl = {0};
 	struct vpu_buf vb_fbc_c_tbl = {0};
 	struct vpu_buf vb_sub_sam_buf = {0};
-	struct vpu_buf vb_task = {0};
 	struct enc_open_param *p_open_param;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
@@ -2883,27 +2977,12 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 
 	p_enc_info->vb_sub_sam_buf = vb_sub_sam_buf;
 
-	vb_task.size = (p_enc_info->vlc_buf_size * VLC_BUF_NUM) +
-			(p_enc_info->param_buf_size * W4_COMMAND_QUEUE_DEPTH);
-	vb_task.daddr = 0;
-	if (p_enc_info->vb_task.size == 0) {
-		ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_task);
-		if (ret)
-			goto free_vb_task;
-
-		p_enc_info->vb_task = vb_task;
-
-		vpu_write_reg(inst->dev, W5_CMD_SET_FB_ADDR_TASK_BUF,
-			      p_enc_info->vb_task.daddr);
-		vpu_write_reg(inst->dev, W5_CMD_SET_FB_TASK_BUF_SIZE, vb_task.size);
-	}
-
 	/* set sub-sampled buffer base addr */
-	vpu_write_reg(inst->dev, W5_ADDR_SUB_SAMPLED_FB_BASE, vb_sub_sam_buf.daddr);
+	vpu_write_reg(inst->dev, W4_ADDR_SUB_SAMPLED_FB_BASE, vb_sub_sam_buf.daddr);
 	/* set sub-sampled buffer size for one frame */
-	vpu_write_reg(inst->dev, W5_SUB_SAMPLED_ONE_FB_SIZE, sub_sampled_size);
+	vpu_write_reg(inst->dev, W4_SUB_SAMPLED_ONE_FB_SIZE, sub_sampled_size);
 
-	vpu_write_reg(inst->dev, W5_PIC_SIZE, pic_size);
+	vpu_write_reg(inst->dev, W4_PIC_SIZE, pic_size);
 
 	/* set stride of luma/chroma for compressed buffer */
 	if ((p_enc_info->rotation_angle || p_enc_info->mirror_direction) &&
@@ -2916,37 +2995,45 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 		chroma_stride = calculate_chroma_stride(p_open_param->pic_width / 2, bit_depth);
 	}
 
-	vpu_write_reg(inst->dev, W5_FBC_STRIDE, luma_stride << 16 | chroma_stride);
-	vpu_write_reg(inst->dev, W5_COMMON_PIC_INFO, stride);
+	vpu_write_reg(inst->dev, W4_FBC_STRIDE, luma_stride << 16 | chroma_stride);
+	reg_val = (inst->nv21 << 29) |
+		  ((map_type == LINEAR_FRAME_MAP) << 28) |
+		  ((map_type >= COMPRESSED_FRAME_MAP ? 0 : inst->cbcr_interleave) << 16) |
+		  stride;
+	vpu_write_reg(inst->dev, W4_COMMON_PIC_INFO, reg_val);
 
 	remain = count;
 	cnt_8_chunk = DIV_ROUND_UP(count, 8);
 	idx = 0;
 	for (j = 0; j < cnt_8_chunk; j++) {
 		reg_val = (j == cnt_8_chunk - 1) << 4 | ((j == 0) << 3);
-		vpu_write_reg(inst->dev, W5_SFB_OPTION, reg_val);
+		vpu_write_reg(inst->dev, W4_SFB_OPTION, reg_val);
 		start_no = j * 8;
 		end_no = start_no + ((remain >= 8) ? 8 : remain) - 1;
 
-		vpu_write_reg(inst->dev, W5_SET_FB_NUM, (start_no << 8) | end_no);
+		vpu_write_reg(inst->dev, W4_SET_FB_NUM, (start_no << 8) | end_no);
 
 		for (i = 0; i < 8 && i < remain; i++) {
-			vpu_write_reg(inst->dev, W5_ADDR_LUMA_BASE0 + (i << 4), fb_arr[i +
+			vpu_write_reg(inst->dev, W4_ADDR_LUMA_BASE0 + (i << 4), fb_arr[i +
 					start_no].buf_y);
-			vpu_write_reg(inst->dev, W5_ADDR_CB_BASE0 + (i << 4),
+			vpu_write_reg(inst->dev, W4_ADDR_CB_BASE0 + (i << 4),
 				      fb_arr[i + start_no].buf_cb);
 			/* luma FBC offset table */
-			vpu_write_reg(inst->dev, W5_ADDR_FBC_Y_OFFSET0 + (i << 4),
+			vpu_write_reg(inst->dev, W4_ADDR_FBC_Y_OFFSET0 + (i << 4),
 				      vb_fbc_y_tbl.daddr + idx * fbc_y_tbl_size);
 			/* chroma FBC offset table */
-			vpu_write_reg(inst->dev, W5_ADDR_FBC_C_OFFSET0 + (i << 4),
+			vpu_write_reg(inst->dev, W4_ADDR_FBC_C_OFFSET0 + (i << 4),
 				      vb_fbc_c_tbl.daddr + idx * fbc_c_tbl_size);
 
-			vpu_write_reg(inst->dev, W5_ADDR_MV_COL0 + (i << 2),
+			vpu_write_reg(inst->dev, W4_ADDR_MV_COL0 + (i << 2),
 				      vb_mv.daddr + idx * mv_col_size);
 			idx++;
 		}
 		remain -= i;
+
+		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
+		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
+		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 
 		ret = send_firmware_command(inst, W5_SET_FB, false, NULL, NULL);
 		if (ret)
@@ -2956,12 +3043,12 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	ret = wave5_vpu_firmware_command_queue_error_check(vpu_dev, NULL);
 	if (ret)
 		goto free_vb_mem;
+	/* W4_SFB_OPTION shares W4_COMMAND_OPTION; clear it after SET_FB phase. */
+	vpu_write_reg(inst->dev, W4_COMMAND_OPTION, 0);
 
 	return ret;
 
 free_vb_mem:
-	wave5_vdi_free_dma_memory(vpu_dev, &vb_task);
-free_vb_task:
 	wave5_vdi_free_dma_memory(vpu_dev, &vb_sub_sam_buf);
 free_vb_sam_buf:
 	wave5_vdi_free_dma_memory(vpu_dev, &vb_fbc_c_tbl);
@@ -3002,6 +3089,8 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 	u32 src_frame_format;
 	u32 reg_val = 0;
 	u32 src_stride_c = 0;
+	u32 sec_axi = 0;
+	dma_addr_t temp_base;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct frame_buffer *p_src_frame = option->source_frame;
 	struct enc_open_param *p_open_param = &p_enc_info->open_param;
@@ -3009,32 +3098,51 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 	u32 format_no = WTL_PIXEL_8BIT;
 	int ret;
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_BS_START_ADDR, option->pic_stream_buffer_addr);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_BS_SIZE, option->pic_stream_buffer_size);
+	temp_base = inst->dev->common_mem.daddr + W4_MAX_CODE_BUF_SIZE;
+
+	vpu_write_reg(inst->dev, W4_BS_START_ADDR, option->pic_stream_buffer_addr);
+	vpu_write_reg(inst->dev, W4_BS_SIZE, option->pic_stream_buffer_size);
 	p_enc_info->stream_buf_start_addr = option->pic_stream_buffer_addr;
 	p_enc_info->stream_buf_size = option->pic_stream_buffer_size;
 	p_enc_info->stream_buf_end_addr =
 		option->pic_stream_buffer_addr + option->pic_stream_buffer_size;
+	p_enc_info->stream_rd_ptr = option->pic_stream_buffer_addr;
+	p_enc_info->stream_wr_ptr = option->pic_stream_buffer_addr;
+	vpu_write_reg(inst->dev, W4_BS_RD_PTR, p_enc_info->stream_rd_ptr);
+	vpu_write_reg(inst->dev, W4_BS_WR_PTR, p_enc_info->stream_wr_ptr);
+	vpu_write_reg(inst->dev, W4_BS_PARAM,
+		      (p_enc_info->line_buf_int_en << 6) |
+		      wave4_resolve_bs_endian_nibble());
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_AXI_SEL, DEFAULT_SRC_AXI);
-	/* secondary AXI */
-	reg_val = wave5_vpu_enc_validate_sec_axi(inst);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_USE_SEC_AXI, reg_val);
+	/* Secondary AXI + scratch regions are reprogrammed for ENC_PIC on Wave4. */
+	sec_axi = wave5_vpu_enc_validate_sec_axi(inst);
+	sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
+	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
+	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, inst->dev->sram_buf.size);
+	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
+	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, wave4_cmd_addr(p_enc_info->vb_work.daddr));
+	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
+	vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_ADDR_TEMP_BASE, wave4_cmd_addr(temp_base));
+	vpu_write_reg(inst->dev, W4_TEMP_SIZE, W4_TEMPBUF_SIZE);
+	vpu_write_reg(inst->dev, W4_TEMP_PARAM, 0);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_REPORT_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_ADDR_REPORT_BASE, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_REPORT_SIZE, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_REPORT_PARAM, 0);
 
 	/*
 	 * CODEOPT_ENC_VCL is used to implicitly encode header/headers to generate bitstream.
 	 * (use ENC_PUT_VIDEO_HEADER for give_command to encode only a header)
 	 */
 	if (option->code_option.implicit_header_encode)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_CODE_OPTION,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_CODE_OPTION,
 			      CODEOPT_ENC_HEADER_IMPLICIT | CODEOPT_ENC_VCL |
 			      (option->code_option.encode_aud << 5) |
 			      (option->code_option.encode_eos << 6) |
 			      (option->code_option.encode_eob << 7));
 	else
-		vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_CODE_OPTION,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_CODE_OPTION,
 			      option->code_option.implicit_header_encode |
 			      (option->code_option.encode_vcl << 1) |
 			      (option->code_option.encode_vps << 2) |
@@ -3042,19 +3150,20 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 			      (option->code_option.encode_pps << 4) |
 			      (option->code_option.encode_aud << 5) |
 			      (option->code_option.encode_eos << 6) |
-			      (option->code_option.encode_eob << 7));
+			      (option->code_option.encode_eob << 7) |
+			      (option->code_option.encode_vui << 9));
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_PIC_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_PIC_PARAM, 0);
 
 	if (option->src_end_flag)
 		/* no more source images. */
-		vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_PIC_IDX, 0xFFFFFFFF);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_PIC_IDX, 0xFFFFFFFF);
 	else
-		vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_PIC_IDX, option->src_idx);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_PIC_IDX, option->src_idx);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_ADDR_Y, p_src_frame->buf_y);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_ADDR_U, p_src_frame->buf_cb);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_ADDR_V, p_src_frame->buf_cr);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_ADDR_Y, p_src_frame->buf_y);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_ADDR_U, p_src_frame->buf_cb);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_ADDR_V, p_src_frame->buf_cr);
 
 	switch (p_open_param->src_format) {
 	case FORMAT_420:
@@ -3144,29 +3253,35 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 		break;
 	}
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_STRIDE,
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_STRIDE,
 		      (p_src_frame->stride << 16) | src_stride_c);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SRC_FORMAT, src_frame_format |
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_FORMAT, src_frame_format |
 		      (format_no << 3) | (justified << 5) | (PIC_SRC_ENDIANNESS_BIG_ENDIAN << 6));
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_CUSTOM_MAP_OPTION_ADDR, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_CUSTOM_MAP_OPTION_PARAM, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_LONGTERM_PIC, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_WP_PIXEL_SIGMA_Y, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_WP_PIXEL_SIGMA_C, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_WP_PIXEL_MEAN_Y, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_WP_PIXEL_MEAN_C, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_PREFIX_SEI_INFO, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_PREFIX_SEI_NAL_ADDR, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SUFFIX_SEI_INFO, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_PIC_SUFFIX_SEI_NAL_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_PREFIX_SEI_INFO, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_PREFIX_SEI_NAL_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SUFFIX_SEI_INFO, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SUFFIX_SEI_NAL_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_ROI_ADDR_CTU_MAP, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_CTU_MODE_MAP_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_CTU_QP_MAP_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_CTU_OPT_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_TIMESTAMP_LOW, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SRC_TIMESTAMP_HIGH, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_LONGTERM_PIC, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SUB_FRAME_SYNC_CONFIG, 0);
 
-	ret = send_firmware_command(inst, W5_DEC_ENC_PIC, true, &reg_val, fail_res);
+	/*
+	 * Wave4 ENC_PIC path is asynchronous like BSP sample flow:
+	 * issue command and consume completion/report in enc_get_result().
+	 */
+	ret = send_firmware_command(inst, W5_DEC_ENC_PIC, false, &reg_val, fail_res);
 	if (ret == -ETIMEDOUT)
 		return ret;
 
-	p_enc_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_enc_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
+	/* Wave420L does not provide stable queue counters on ENC_PIC. */
+	p_enc_info->instance_queue_count = 0;
+	p_enc_info->report_queue_count = 0;
 
 	if (ret)
 		return ret;
@@ -3176,46 +3291,56 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 
 int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *result)
 {
-	int ret;
-	u32 encoding_success;
 	u32 reg_val;
+	int retry;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
-	struct vpu_device *vpu_dev = inst->dev;
-
-	ret = wave5_send_query(inst->dev, inst, GET_RESULT);
-	if (ret)
-		return ret;
 
 	dev_dbg(inst->dev->dev, "%s: enc pic complete\n", __func__);
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
+	/* Wave420L returns ENC_PIC result latches directly on PIC_RUN completion. */
+	p_enc_info->instance_queue_count = 0;
+	p_enc_info->report_queue_count = 0;
 
-	p_enc_info->instance_queue_count = (reg_val >> 16) & 0xff;
-	p_enc_info->report_queue_count = (reg_val & QUEUE_REPORT_MASK);
-
-	encoding_success = vpu_read_reg(inst->dev, W5_RET_ENC_ENCODING_SUCCESS);
-	if (!encoding_success) {
-		result->error_reason = vpu_read_reg(inst->dev, W5_RET_ENC_ERR_INFO);
+	result->warn_info = 0;
+	for (retry = 0; retry < 100; retry++) {
+		if (vpu_read_reg(inst->dev, W4_RET_SUCCESS))
+			break;
+		usleep_range(100, 200);
+	}
+	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
+		result->error_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
+		dev_warn(inst->dev->dev,
+			 "w4 enc result not ready: fail=0x%x pic_idx=0x%x src_idx=0x%x pic_byte=0x%x pic_type=0x%x bs_rd=0x%x bs_wr=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
+			 result->error_reason,
+			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_IDX),
+			 vpu_read_reg(inst->dev, W4_RET_ENC_USED_SRC_IDX),
+			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_BYTE),
+			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_TYPE),
+			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
+			 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
+			 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
+			 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
+			 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
+			 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC));
 		return -EIO;
 	}
+	result->error_reason = 0;
 
-	result->warn_info = vpu_read_reg(inst->dev, W5_RET_ENC_WARN_INFO);
-
-	reg_val = vpu_read_reg(inst->dev, W5_RET_ENC_PIC_TYPE);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_ENC_PIC_TYPE);
 	result->pic_type = reg_val & 0xFFFF;
 
-	result->enc_vcl_nut = vpu_read_reg(inst->dev, W5_RET_ENC_VCL_NUT);
+	result->enc_vcl_nut = vpu_read_reg(inst->dev, W4_RET_ENC_VCL_NUT);
 	/*
 	 * To get the reconstructed frame use the following index on
 	 * inst->frame_buf
 	 */
-	result->recon_frame_index = vpu_read_reg(inst->dev, W5_RET_ENC_PIC_IDX);
-	result->enc_pic_byte = vpu_read_reg(inst->dev, W5_RET_ENC_PIC_BYTE);
-	result->enc_src_idx = vpu_read_reg(inst->dev, W5_RET_ENC_USED_SRC_IDX);
-	p_enc_info->stream_wr_ptr = vpu_read_reg(inst->dev, W5_RET_ENC_WR_PTR);
-	p_enc_info->stream_rd_ptr = vpu_read_reg(inst->dev, W5_RET_ENC_RD_PTR);
+	result->recon_frame_index = (s32)vpu_read_reg(inst->dev, W4_RET_ENC_PIC_IDX);
+	result->enc_pic_byte = vpu_read_reg(inst->dev, W4_RET_ENC_PIC_BYTE);
+	result->enc_src_idx = (s32)vpu_read_reg(inst->dev, W4_RET_ENC_USED_SRC_IDX);
+	p_enc_info->stream_wr_ptr = vpu_read_reg(inst->dev, W4_BS_WR_PTR);
+	p_enc_info->stream_rd_ptr = vpu_read_reg(inst->dev, W4_BS_RD_PTR);
 
-	result->bitstream_buffer = vpu_read_reg(inst->dev, W5_RET_ENC_RD_PTR);
+	result->bitstream_buffer = p_enc_info->stream_rd_ptr;
 	result->rd_ptr = p_enc_info->stream_rd_ptr;
 	result->wr_ptr = p_enc_info->stream_wr_ptr;
 
@@ -3227,22 +3352,15 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 	else
 		result->bitstream_size = result->enc_pic_byte;
 
-	result->enc_host_cmd_tick = vpu_read_reg(inst->dev, W5_RET_ENC_HOST_CMD_TICK);
-	result->enc_encode_end_tick = vpu_read_reg(inst->dev, W5_RET_ENC_ENCODING_END_TICK);
-
-	if (!p_enc_info->first_cycle_check) {
-		result->frame_cycle = (result->enc_encode_end_tick - result->enc_host_cmd_tick) *
-			p_enc_info->cycle_per_tick;
-		p_enc_info->first_cycle_check = true;
-	} else {
-		result->frame_cycle =
-			(result->enc_encode_end_tick - vpu_dev->last_performance_cycles) *
-			p_enc_info->cycle_per_tick;
-		if (vpu_dev->last_performance_cycles < result->enc_host_cmd_tick)
-			result->frame_cycle = (result->enc_encode_end_tick -
-					result->enc_host_cmd_tick) * p_enc_info->cycle_per_tick;
-	}
-	vpu_dev->last_performance_cycles = result->enc_encode_end_tick;
+	result->enc_host_cmd_tick = 0;
+	result->enc_encode_end_tick = 0;
+	result->frame_cycle = vpu_read_reg(inst->dev, W4_RET_FRAME_CYCLE);
+	p_enc_info->first_cycle_check = true;
+	dev_info(inst->dev->dev,
+		 "w4 enc result: recon_idx=%d src_idx=%d pic_byte=%u pic_type=0x%x vcl=0x%x rd=0x%x wr=0x%x\n",
+		 result->recon_frame_index, result->enc_src_idx,
+		 result->enc_pic_byte, result->pic_type,
+		 result->enc_vcl_nut, (u32)result->rd_ptr, (u32)result->wr_ptr);
 
 	return 0;
 }
