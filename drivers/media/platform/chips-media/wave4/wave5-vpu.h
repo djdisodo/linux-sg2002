@@ -41,6 +41,11 @@ struct vpu_format {
 	const struct v4l2_frmsize_stepwise *v4l2_frmsize;
 };
 
+extern int wave4_common_layout_mode;
+extern int wave4_common_work_offset_mb;
+extern int wave4_common_bs_offset_mb;
+extern int wave4_common_bs_size_mb;
+
 static inline struct vpu_instance *wave5_to_vpu_inst(struct v4l2_fh *vfh)
 {
 	return container_of(vfh, struct vpu_instance, v4l2_fh);

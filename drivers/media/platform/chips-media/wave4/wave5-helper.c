@@ -122,7 +122,7 @@ int wave4_vpu_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue 
 	dst_vq->mem_ops = &vb2_dma_contig_memops;
 	dst_vq->ops = ops;
 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
-	dst_vq->buf_struct_size = sizeof(struct vpu_src_buffer);
+	dst_vq->buf_struct_size = sizeof(struct vpu_dst_buffer);
 	dst_vq->drv_priv = inst;
 	dst_vq->lock = &inst->dev->dev_lock;
 	dst_vq->dev = inst->dev->v4l2_dev.dev;

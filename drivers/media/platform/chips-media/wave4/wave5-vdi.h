@@ -27,6 +27,7 @@ struct vpu_buf {
 	size_t size;
 	dma_addr_t daddr;
 	void *vaddr;
+	bool from_common;
 };
 
 int wave4_vdi_init(struct device *dev);

@@ -49,11 +49,22 @@ struct wave5_match_data {
 static int vpu_poll_interval = 5;
 module_param(vpu_poll_interval, int, 0644);
 
+/*
+ * Keep these symbols available for the shared Wave4 hw path, but default to
+ * disabled fixed-layout decode buffers in the cleaned driver.
+ */
+int wave4_common_layout_mode;
+int wave4_common_work_offset_mb = 4;
+int wave4_common_bs_offset_mb = 8;
+int wave4_common_bs_size_mb = 4;
+
 int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 {
 	unsigned int wait_ms = timeout;
+	unsigned int waited_ms = 0;
 	int ret;
 	u32 reason;
+	u32 reason_usr;
 	u32 int_sts;
 
 	/*
@@ -63,31 +74,43 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 	if (wait_ms > 3000)
 		wait_ms = 3000;
 
-	ret = wait_for_completion_timeout(&inst->irq_done,
-					  msecs_to_jiffies(wait_ms));
-	if (!ret) {
+	while (waited_ms < wait_ms) {
+		unsigned int slice_ms = min_t(unsigned int, 5, wait_ms - waited_ms);
+
+		ret = wait_for_completion_timeout(&inst->irq_done,
+						  msecs_to_jiffies(slice_ms));
+		if (ret) {
+			reinit_completion(&inst->irq_done);
+			return 0;
+		}
+
+		waited_ms += slice_ms;
 		int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
 		reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
-		if (int_sts && reason) {
+		reason_usr = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON_USR);
+		if (reason_usr || (int_sts && reason)) {
+			u32 clear_reason = reason ? reason : reason_usr;
+
 			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_REASON_CLR,
-						 reason);
+						 clear_reason);
 			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
 			return 0;
 		}
-		dev_warn(inst->dev->dev,
-			 "w4 wait_interrupt timeout: busy=0x%x vint_sts=0x%x vint_reason=0x%x ret_success=0x%x ret_fail=0x%x cmd=0x%x vcpu_pc=0x%x\n",
-			 wave5_vdi_read_register(inst->dev, W5_VPU_BUSY_STATUS),
-			 int_sts, reason,
-			 wave5_vdi_read_register(inst->dev, W5_RET_SUCCESS),
-			 wave5_vdi_read_register(inst->dev, W5_RET_FAIL_REASON),
-			 wave5_vdi_read_register(inst->dev, W5_COMMAND),
-			 wave5_vdi_read_register(inst->dev, W5_VCPU_CUR_PC));
-		return -ETIMEDOUT;
 	}
 
-	reinit_completion(&inst->irq_done);
+	int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
+	reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
+	reason_usr = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON_USR);
+	dev_warn(inst->dev->dev,
+		 "w4 wait_interrupt timeout: busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x ret_success=0x%x ret_fail=0x%x cmd=0x%x vcpu_pc=0x%x\n",
+		 wave5_vdi_read_register(inst->dev, W5_VPU_BUSY_STATUS),
+		 int_sts, reason, reason_usr,
+		 wave5_vdi_read_register(inst->dev, W5_RET_SUCCESS),
+		 wave5_vdi_read_register(inst->dev, W5_RET_FAIL_REASON),
+		 wave5_vdi_read_register(inst->dev, W5_COMMAND),
+		 wave5_vdi_read_register(inst->dev, W5_VCPU_CUR_PC));
 
-	return 0;
+	return -ETIMEDOUT;
 }
 
 static void wave5_vpu_handle_irq(void *dev_id)
@@ -98,13 +121,15 @@ static void wave5_vpu_handle_irq(void *dev_id)
 	int val;
 	unsigned long flags;
 
-	irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
+	irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON_USR);
+	if (!irq_reason)
+		irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
 	wave5_vdi_write_register(dev, W5_VPU_VINT_REASON_CLR, irq_reason);
 	wave5_vdi_write_register(dev, W5_VPU_VINT_CLEAR, 0x1);
 
 	spin_lock_irqsave(&dev->irq_spinlock, flags);
 	list_for_each_entry_safe(inst, tmp, &dev->instances, list) {
-		if (irq_reason & (W4_INT_SET_PARAM_SEQ | W4_INT_QUERY))
+		if (irq_reason)
 			complete(&inst->irq_done);
 
 		if (irq_reason & W4_INT_PIC_RUN) {

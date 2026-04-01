@@ -720,6 +720,7 @@ struct enc_info {
 	struct vpu_buf vb_task;
 	u64 cur_pts; /* current timestamp in 90_k_hz */
 	u64 pts_map[32]; /* PTS mapped with source frame index */
+	s32 pending_src_idx; /* source vb2 index currently inflight in firmware (-1 when idle) */
 	u32 instance_queue_count;
 	u32 report_queue_count;
 	bool first_cycle_check;

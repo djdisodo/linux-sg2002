@@ -126,6 +126,7 @@ int wave5_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb
 		return -ENOMEM;
 	vb->vaddr = vaddr;
 	vb->daddr = daddr;
+	vb->from_common = false;
 
 	return 0;
 }
@@ -134,6 +135,11 @@ int wave5_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 {
 	if (vb->size == 0)
 		return -EINVAL;
+
+	if (vb->from_common) {
+		memset(vb, 0, sizeof(*vb));
+		return 0;
+	}
 
 	if (!vb->vaddr)
 		dev_err(vpu_dev->dev, "%s: requested free of unmapped buffer\n", __func__);
