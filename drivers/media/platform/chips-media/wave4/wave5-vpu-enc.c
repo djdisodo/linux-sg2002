@@ -93,6 +93,16 @@ static const struct vpu_format enc_fmt_list[FMT_TYPES][MAX_FMTS] = {
 	}
 };
 
+/*
+ * Keep ENC_PIC completion synchronous by default on Wave420L.
+ * The async completion path can leave userspace blocked in poll/streamoff
+ * when IRQ/result callbacks are dropped, while sync mode has proven stable.
+ */
+static int wave4_sync_enc_pic_done = 1;
+module_param_named(w4_sync_enc_pic_done, wave4_sync_enc_pic_done, int, 0644);
+MODULE_PARM_DESC(w4_sync_enc_pic_done,
+		 "Wait/poll for ENC_PIC completion in device_run and finish synchronously (0=off, 1=on default)");
+
 static int switch_state(struct vpu_instance *inst, enum vpu_instance_state state)
 {
 	switch (state) {
@@ -128,6 +138,7 @@ invalid_state_switch:
 static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
 	struct vb2_v4l2_buffer *src_buf;
 	struct vb2_v4l2_buffer *dst_buf;
@@ -167,11 +178,14 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	src_buf = v4l2_m2m_next_src_buf(m2m_ctx);
 	if (!src_buf) {
 		dev_dbg(inst->dev->dev, "%s: No source buffer found\n", __func__);
-		if (m2m_ctx->is_draining)
+		if (m2m_ctx->is_draining) {
 			pic_param.src_end_flag = 1;
-		else
+			inst->sent_eos = true;
+		} else {
 			return -EAGAIN;
+		}
 	} else {
+		inst->sent_eos = false;
 		if (inst->src_fmt.num_planes == 1) {
 			frame_buf.buf_y =
 				vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 0);
@@ -198,6 +212,7 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	pic_param.source_frame = &frame_buf;
 	pic_param.code_option.implicit_header_encode = 1;
 	pic_param.code_option.encode_aud = inst->encode_aud;
+	p_enc_info->pending_src_idx = -1;
 	ret = wave5_vpu_enc_start_one_frame(inst, &pic_param, fail_res);
 	if (ret) {
 		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
@@ -231,8 +246,10 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 		 * it in the videobuf2 framework once the index is returned by the
 		 * firmware in finish_encode
 		 */
-		if (src_buf)
+		if (src_buf) {
+			p_enc_info->pending_src_idx = src_buf->vb2_buf.index;
 			v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
+		}
 	}
 
 	return 0;
@@ -241,6 +258,7 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
 	struct enc_output_info enc_output_info;
 	struct vb2_v4l2_buffer *src_buf = NULL;
@@ -248,9 +266,40 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 
 	ret = wave5_vpu_enc_get_output_info(inst, &enc_output_info);
 	if (ret) {
-		dev_dbg(inst->dev->dev,
-			"%s: vpu_enc_get_output_info fail: %d  reason: %u | info: %u\n",
-			__func__, ret, enc_output_info.error_reason, enc_output_info.warn_info);
+		/*
+		 * Crash-guard: never return here without finishing the mem2mem job.
+		 * Returning early leaves a queued job active and userspace can block
+		 * forever in poll/streamoff (observed as unkillable D-state v4l2-ctl).
+		 */
+		dev_warn_ratelimited(inst->dev->dev,
+				     "%s: vpu_enc_get_output_info fail: %d reason:%u warn:%u; stopping instance\n",
+				     __func__, ret, enc_output_info.error_reason,
+				     enc_output_info.warn_info);
+		/*
+		 * Crash-guard: don't touch source/destination buffer lists here.
+		 * On this error path we can get repeated callbacks without a valid
+		 * report queue entry. Only complete the known in-flight source index
+		 * (if still ACTIVE) plus one pending destination buffer.
+		 */
+		if (p_enc_info->pending_src_idx >= 0) {
+			struct vb2_buffer *vb;
+
+			vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
+					    p_enc_info->pending_src_idx);
+			if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
+				src_buf = to_vb2_v4l2_buffer(vb);
+				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+			}
+			p_enc_info->pending_src_idx = -1;
+		}
+		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+		if (dst_buf) {
+			vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+			dst_buf->field = V4L2_FIELD_NONE;
+			v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+		}
+		switch_state(inst, VPU_INST_STATE_STOP);
+		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 		return;
 	}
 
@@ -277,14 +326,32 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 		if (src_buf) {
 			inst->timestamp = src_buf->vb2_buf.timestamp;
 			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
+			p_enc_info->pending_src_idx = -1;
 		} else {
 			dev_warn(inst->dev->dev, "%s: no source buffer with index: %d found\n",
 				 __func__, enc_output_info.enc_src_idx);
+			p_enc_info->pending_src_idx = -1;
 		}
+	}
+	/*
+	 * Some Wave4 result paths do not return a valid enc_src_idx even though
+	 * one source buffer was queued. Complete the tracked inflight source
+	 * buffer so streamoff does not leave it ACTIVE.
+	 */
+	if (!src_buf && p_enc_info->pending_src_idx >= 0) {
+		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
+						       p_enc_info->pending_src_idx);
+
+		if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
+			src_buf = to_vb2_v4l2_buffer(vb);
+			inst->timestamp = src_buf->vb2_buf.timestamp;
+			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
+		}
+		p_enc_info->pending_src_idx = -1;
 	}
 
 	dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-	if (enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END) {
+	if (enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END && inst->sent_eos) {
 		static const struct v4l2_event vpu_event_eos = {
 			.type = V4L2_EVENT_EOS
 		};
@@ -296,6 +363,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 		}
 
 		v4l2_event_queue_fh(&inst->v4l2_fh, &vpu_event_eos);
+		inst->sent_eos = false;
 
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	} else {
@@ -1157,7 +1225,11 @@ static int wave5_set_enc_openparam(struct enc_open_param *open_param,
 	else
 		open_param->src_format = FORMAT_420;
 
-	open_param->wave_param.gop_preset_idx = PRESET_IDX_IPP_SINGLE;
+	/*
+	 * Wave420L firmware on SG2002 is stable with legacy IPP preset.
+	 * PRESET_IDX_IPP_SINGLE can trip SET_PARAM watchdog on this path.
+	 */
+	open_param->wave_param.gop_preset_idx = PRESET_IDX_IPP;
 	open_param->wave_param.hvs_qp_scale = 2;
 	open_param->wave_param.hvs_max_delta_qp = 10;
 	open_param->wave_param.skip_intra_trans = 1;
@@ -1323,9 +1395,27 @@ static int initialize_sequence(struct vpu_instance *inst)
 	if (ret)
 		return ret;
 
-	dev_dbg(inst->dev->dev, "%s: min_frame_buffer: %u | min_source_buffer: %u\n",
-		__func__, initial_info.min_frame_buffer_count,
-		initial_info.min_src_frame_count);
+	dev_info(inst->dev->dev,
+		 "enc seq_init: min_frame_buffer=%u min_source_buffer=%u\n",
+		 initial_info.min_frame_buffer_count,
+		 initial_info.min_src_frame_count);
+
+	/*
+	 * Some Wave420L runs report zero here even after successful SET_PARAM.
+	 * Keep a conservative floor so framebuffer setup can proceed and
+	 * surface the next failure point.
+	 */
+	if (!initial_info.min_frame_buffer_count) {
+		dev_warn(inst->dev->dev,
+			 "enc seq_init returned min_frame_buffer_count=0, forcing 2\n");
+		initial_info.min_frame_buffer_count = 2;
+	}
+	if (!initial_info.min_src_frame_count) {
+		dev_warn(inst->dev->dev,
+			 "enc seq_init returned min_src_frame_count=0, forcing 1\n");
+		initial_info.min_src_frame_count = 1;
+	}
+
 	inst->min_src_buf_count = initial_info.min_src_frame_count +
 				  W4_COMMAND_QUEUE_DEPTH;
 
@@ -1572,6 +1662,15 @@ static void wave5_vpu_enc_device_run(void *priv)
 				dev_dbg(inst->dev->dev, "Missing buffers for encode, try again\n");
 			break;
 		}
+		if (READ_ONCE(wave4_sync_enc_pic_done)) {
+			if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0)
+				dev_warn(inst->dev->dev,
+					 "w4 ENC_PIC wait timeout in sync mode, attempting finish path anyway\n");
+			inst->ops->finish_process(inst);
+			dev_dbg(inst->dev->dev, "%s: leave after synchronous finish", __func__);
+			pm_runtime_put_autosuspend(inst->dev->dev);
+			return;
+		}
 		dev_dbg(inst->dev->dev, "%s: leave with active job", __func__);
 		pm_runtime_put_autosuspend(inst->dev->dev);
 		return;
@@ -1638,6 +1737,7 @@ static int wave5_vpu_open_enc(struct file *filp)
 		kfree(inst);
 		return -ENOMEM;
 	}
+	inst->codec_info->enc_info.pending_src_idx = -1;
 
 	v4l2_fh_init(&inst->v4l2_fh, vdev);
 	v4l2_fh_add(&inst->v4l2_fh, filp);
