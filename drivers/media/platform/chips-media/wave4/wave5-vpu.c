@@ -51,6 +51,16 @@ static int vpu_poll_interval = 5;
 module_param(vpu_poll_interval, int, 0644);
 
 /*
+ * SG2002 Wave4 integrations can expose an IRQ resource that never increments
+ * in /proc/interrupts. Keep polling enabled by default so async PIC completion
+ * paths continue to work even when the wired IRQ line is silent.
+ */
+static int wave4_poll_mode = 1;
+module_param_named(w4_poll_mode, wave4_poll_mode, int, 0644);
+MODULE_PARM_DESC(w4_poll_mode,
+		 "Use polling-based IRQ handling (0=threaded IRQ, 1=polling default)");
+
+/*
  * Keep these symbols available for the shared Wave4 hw path, but default to
  * disabled fixed-layout decode buffers in the cleaned driver.
  */
@@ -90,7 +100,7 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 		reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
 		reason_usr = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON_USR);
 		if (reason_usr || (int_sts && reason)) {
-			u32 clear_reason = reason ? reason : reason_usr;
+			u32 clear_reason = reason | reason_usr;
 
 			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_REASON_CLR,
 						 clear_reason);
@@ -117,15 +127,23 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 static void wave5_vpu_handle_irq(void *dev_id)
 {
 	u32 irq_reason;
+	u32 irq_reason_usr;
+	u32 irq_reason_hw;
 	struct vpu_instance *inst, *tmp;
 	struct vpu_device *dev = dev_id;
 	int val;
 	unsigned long flags;
 
-	irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON_USR);
-	if (!irq_reason)
-		irq_reason = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
-	wave5_vdi_write_register(dev, W5_VPU_VINT_REASON_CLR, irq_reason);
+	irq_reason_usr = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON_USR);
+	irq_reason_hw = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
+	/*
+	 * Wave4 can signal completion bits in either VINT_REASON or
+	 * VINT_REASON_USR. Use the union so PIC_RUN completions are not lost
+	 * when one bank holds stale non-PIC bits.
+	 */
+	irq_reason = irq_reason_usr | irq_reason_hw;
+	if (irq_reason)
+		wave5_vdi_write_register(dev, W5_VPU_VINT_REASON_CLR, irq_reason);
 	wave5_vdi_write_register(dev, W5_VPU_VINT_CLEAR, 0x1);
 
 	spin_lock_irqsave(&dev->irq_spinlock, flags);
@@ -525,8 +543,10 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&dev->instances);
 
 	dev->irq = platform_get_irq(pdev, 0);
+	if (READ_ONCE(wave4_poll_mode))
+		dev->irq = -1;
 	if (dev->irq < 0) {
-		dev_err(&pdev->dev, "failed to get irq resource, falling back to polling\n");
+		dev_info(&pdev->dev, "using polling IRQ backend\n");
 		sema_init(&dev->irq_sem, 1);
 		dev->irq_thread = kthread_run(irq_thread, dev, "irq thread");
 		hrtimer_setup(&dev->hrtimer, &wave5_vpu_timer_callback, CLOCK_MONOTONIC,
@@ -539,6 +559,9 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		}
 		dev->vpu_poll_interval = vpu_poll_interval;
 		kthread_init_work(&dev->work, wave5_vpu_irq_work_fn);
+		hrtimer_start(&dev->hrtimer,
+			      ns_to_ktime(dev->vpu_poll_interval * NSEC_PER_MSEC),
+			      HRTIMER_MODE_REL_PINNED);
 	} else {
 		ret = devm_request_threaded_irq(&pdev->dev, dev->irq, wave5_vpu_irq,
 						wave5_vpu_irq_thread, IRQF_ONESHOT, "vpu_irq", dev);
@@ -596,8 +619,11 @@ err_dec_unreg:
 err_v4l2_unregister:
 	v4l2_device_unregister(&dev->v4l2_dev);
 err_irq_release:
-	if (dev->irq < 0)
+	if (dev->irq < 0) {
+		hrtimer_cancel(&dev->hrtimer);
+		kthread_cancel_work_sync(&dev->work);
 		kthread_destroy_worker(dev->worker);
+	}
 err_vdi_release:
 	if (dev->irq_thread) {
 		kthread_stop(dev->irq_thread);
