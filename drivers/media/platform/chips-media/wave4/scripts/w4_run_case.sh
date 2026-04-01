@@ -382,7 +382,7 @@ printf '%s\n' "$v4l2_cmd" >"$case_dir/v4l2.command"
 
 set +e
 if command -v timeout >/dev/null 2>&1; then
-  timeout "$timeout_sec" sh -c "$v4l2_cmd" >"$case_dir/v4l2.log" 2>&1
+  timeout -k 2 "$timeout_sec" sh -c "$v4l2_cmd" >"$case_dir/v4l2.log" 2>&1
   rc=$?
 else
   sh -c "$v4l2_cmd" >"$case_dir/v4l2.log" 2>&1
