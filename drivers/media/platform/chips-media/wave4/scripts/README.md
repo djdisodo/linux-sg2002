@@ -79,10 +79,8 @@ Matrix smoke:
 
 ## Notes
 
-- `w4_run_case.sh` defaults `W4_BASE_PARAMS` to:
-  `w4_use_reserved_mem=1`
-- Disable base params by running:
-  `W4_BASE_PARAMS='' ./w4_run_case.sh ...`
+- `w4_run_case.sh` defaults `W4_BASE_PARAMS` to empty.
+- Use `W4_BASE_PARAMS='k=v ...' ./w4_run_case.sh ...` to add common module params.
 - Each case creates:
   - remote: `/root/vpu-test/<case>`
   - local copy: `.../wave4/test-logs/<case>` (unless `--no-pull`)

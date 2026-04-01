@@ -130,7 +130,6 @@ fi
 
 cases=(
   "baseline|"
-  "reserved_off|w4_use_reserved_mem=0"
 )
 
 summary=""
