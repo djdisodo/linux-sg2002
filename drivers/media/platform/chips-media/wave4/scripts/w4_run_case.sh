@@ -23,6 +23,7 @@ SIZEIMAGE="${SIZEIMAGE:-}"
 CAP_BUFS="${CAP_BUFS:-6}"
 OUT_BUFS="${OUT_BUFS:-6}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-45}"
+REMOTE_WRAP_TIMEOUT_SEC="${REMOTE_WRAP_TIMEOUT_SEC:-$((TIMEOUT_SEC + 90))}"
 CASE_NAME=""
 CUSTOM_V4L2_CMD=""
 
@@ -326,15 +327,19 @@ if [[ -n "$INSMOD_ARGS" ]]; then
   echo "  insmod args : $INSMOD_ARGS"
 fi
 
-"${ssh_argv[@]}" "$TARGET_HOST" sh -s -- \
-  "$REMOTE_CASE_DIR" \
-  "$REMOTE_ROOT" \
-  "$TARGET_MODULE" \
-  "$REMOTE_DO_RELOAD" \
-  "$INSMOD_ARGS_B64" \
-  "$TIMEOUT_SEC" \
-  "$CUSTOM_V4L2_CMD_B64" \
-  "$REMOTE_OUTPUT" <<'EOSH'
+remote_exec_rc=0
+set +e
+if command -v timeout >/dev/null 2>&1; then
+  timeout -k 5 "$REMOTE_WRAP_TIMEOUT_SEC" \
+    "${ssh_argv[@]}" "$TARGET_HOST" sh -s -- \
+    "$REMOTE_CASE_DIR" \
+    "$REMOTE_ROOT" \
+    "$TARGET_MODULE" \
+    "$REMOTE_DO_RELOAD" \
+    "$INSMOD_ARGS_B64" \
+    "$TIMEOUT_SEC" \
+    "$CUSTOM_V4L2_CMD_B64" \
+    "$REMOTE_OUTPUT" <<'EOSH'
 set -eu
 
 case_dir=$1
@@ -401,8 +406,102 @@ grep -E \
   "w4 wait_interrupt timeout|seq init failed|fail_reason=|dec_err=|Oops|BUG:|Unable to handle kernel paging request" \
   "$case_dir/dmesg.log" >"$case_dir/highlights.log" || true
 EOSH
+  remote_exec_rc=$?
+else
+  "${ssh_argv[@]}" "$TARGET_HOST" sh -s -- \
+    "$REMOTE_CASE_DIR" \
+    "$REMOTE_ROOT" \
+    "$TARGET_MODULE" \
+    "$REMOTE_DO_RELOAD" \
+    "$INSMOD_ARGS_B64" \
+    "$TIMEOUT_SEC" \
+    "$CUSTOM_V4L2_CMD_B64" \
+    "$REMOTE_OUTPUT" <<'EOSH'
+set -eu
 
-rc="$("${ssh_argv[@]}" "$TARGET_HOST" "cat '$REMOTE_CASE_DIR/v4l2.rc'")"
+case_dir=$1
+remote_root=$2
+target_module=$3
+do_reload=$4
+insmod_args_b64=$5
+timeout_sec=$6
+v4l2_cmd_b64=$7
+output_file=$8
+
+mkdir -p "$case_dir"
+ln -sfn "$case_dir" "$remote_root/latest"
+
+dmesg -C >/dev/null 2>&1 || true
+
+insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+v4l2_cmd="$(printf '%s' "$v4l2_cmd_b64" | base64 -d)"
+
+if [ "$do_reload" = "1" ]; then
+  modprobe -r wave4 2>/dev/null || true
+  rmmod wave4 2>/dev/null || true
+  # Direct insmod does not pull dependencies; preload mem2mem/vb2 modules.
+  for m in videobuf2_common videobuf2_memops videobuf2_v4l2 videobuf2_dma_contig v4l2_mem2mem; do
+    modprobe "$m" 2>/dev/null || true
+  done
+  if [ -n "$insmod_args" ]; then
+    # shellcheck disable=SC2086
+    insmod "$target_module" $insmod_args
+  else
+    insmod "$target_module"
+  fi
+fi
+
+if [ -d /sys/module/wave4/parameters ]; then
+  {
+    for p in /sys/module/wave4/parameters/*; do
+      [ -f "$p" ] || continue
+      printf '%s=%s\n' "$(basename "$p")" "$(cat "$p")"
+    done
+  } >"$case_dir/module_params.log"
+fi
+
+printf '%s\n' "$v4l2_cmd" >"$case_dir/v4l2.command"
+
+set +e
+if command -v timeout >/dev/null 2>&1; then
+  timeout -k 2 "$timeout_sec" sh -c "$v4l2_cmd" >"$case_dir/v4l2.log" 2>&1
+  rc=$?
+else
+  sh -c "$v4l2_cmd" >"$case_dir/v4l2.log" 2>&1
+  rc=$?
+fi
+set -e
+printf '%s\n' "$rc" >"$case_dir/v4l2.rc"
+
+dmesg -T >"$case_dir/dmesg.log" 2>/dev/null || dmesg >"$case_dir/dmesg.log"
+
+if [ -n "$output_file" ] && [ -f "$output_file" ]; then
+  stat -c '%n %s' "$output_file" >"$case_dir/output_size.txt" 2>/dev/null || true
+fi
+
+grep -E \
+  "w4 wait_interrupt timeout|seq init failed|fail_reason=|dec_err=|Oops|BUG:|Unable to handle kernel paging request" \
+  "$case_dir/dmesg.log" >"$case_dir/highlights.log" || true
+EOSH
+  remote_exec_rc=$?
+fi
+set -e
+
+if (( remote_exec_rc != 0 )); then
+  echo "  remote exec rc: $remote_exec_rc"
+fi
+
+set +e
+rc="$("${ssh_argv[@]}" "$TARGET_HOST" "cat '$REMOTE_CASE_DIR/v4l2.rc' 2>/dev/null")"
+rc_read_rc=$?
+set -e
+if (( rc_read_rc != 0 )) || [[ -z "$rc" ]]; then
+  if (( remote_exec_rc != 0 )); then
+    rc="$remote_exec_rc"
+  else
+    rc=1
+  fi
+fi
 
 if (( PULL_LOGS )); then
   LOCAL_CASE_DIR="$LOCAL_ROOT/$CASE_NAME"
