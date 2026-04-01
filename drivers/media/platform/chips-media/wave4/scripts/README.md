@@ -1,6 +1,7 @@
 # Wave4 Test Scripts
 
-These scripts replace the repetitive manual flow for build/deploy/reload/decode testing on Duo 256M.
+These scripts replace the repetitive manual flow for build/deploy/reload testing on Duo 256M.
+Default run mode is now encoder-oriented.
 
 ## Defaults
 
@@ -9,6 +10,7 @@ These scripts replace the repetitive manual flow for build/deploy/reload/decode 
 - Kernel out dir: `out-sg2002-milkv`
 - Remote log root: `/root/vpu-test`
 - Local pulled logs: `drivers/media/platform/chips-media/wave4/test-logs`
+- `w4_run_case.sh` default mode/device: `encode` on `/dev/video1`
 
 Override using script options or environment variables:
 `TARGET_HOST`, `TARGET_MODULE`, `SSH_CMD`, `OUT_DIR`, `REMOTE_ROOT`, `LOCAL_ROOT`.
@@ -17,7 +19,7 @@ Override using script options or environment variables:
 
 - `w4_build_module.sh`: build `wave4.ko` from current source.
 - `w4_deploy_module.sh`: deploy `wave4.ko` by `rsync`.
-- `w4_run_case.sh`: run one decode case (optional deploy + reload + v4l2 + logs).
+- `w4_run_case.sh`: run one case (default `encode`, optional deploy + reload + v4l2 + logs).
 - `w4_matrix_smoke.sh`: run a small preset matrix of candidate module params.
 
 ## Typical Usage
@@ -34,12 +36,26 @@ Deploy only:
 ./w4_deploy_module.sh
 ```
 
-Single case:
+Single encode case:
 
 ```bash
 ./w4_run_case.sh \
-  --name hevc-baseline \
+  --name hevc-enc-baseline \
+  --input /mnt/storage/in_416x240_yu12.yuv \
+  --width 416 --height 240 \
+  --pixfmt HEVC \
+  --raw-pixfmt YU12
+```
+
+Single decode case:
+
+```bash
+./w4_run_case.sh \
+  --mode decode \
+  --device /dev/video0 \
+  --name hevc-dec-baseline \
   --input /mnt/storage/sintel_272p_head4m.h265 \
+  --pixfmt HEVC \
   --param w4_init_seq_dump_regs=1
 ```
 
@@ -56,14 +72,15 @@ Matrix smoke:
 
 ```bash
 ./w4_matrix_smoke.sh \
-  --input /mnt/storage/sintel_272p_head4m.h265 \
+  --input /mnt/storage/in_416x240_yu12.yuv \
+  --mode encode \
   --sizeimage 4194304
 ```
 
 ## Notes
 
 - `w4_run_case.sh` defaults `W4_BASE_PARAMS` to:
-  `w4_use_reserved_mem=1 w4_wait_irq_cap_ms=5000`
+  `w4_use_reserved_mem=1`
 - Disable base params by running:
   `W4_BASE_PARAMS='' ./w4_run_case.sh ...`
 - Each case creates:

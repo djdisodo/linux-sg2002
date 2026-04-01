@@ -6,15 +6,19 @@ DEPLOY_SCRIPT="$SCRIPT_DIR/w4_deploy_module.sh"
 
 TARGET_HOST="${TARGET_HOST:-root@192.168.45.130}"
 TARGET_MODULE="${TARGET_MODULE:-/root/wave4.ko}"
-SSH_CMD="${SSH_CMD:-ssh -o StrictHostKeyChecking=no}"
+SSH_CMD="${SSH_CMD:-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2}"
 REMOTE_ROOT="${REMOTE_ROOT:-/root/vpu-test}"
 LOCAL_ROOT="${LOCAL_ROOT:-$SCRIPT_DIR/../test-logs}"
 LOCAL_MODULE="$SCRIPT_DIR/../wave4.ko"
 
-REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video0}"
+MODE="${MODE:-encode}"
+REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video1}"
 REMOTE_INPUT="${REMOTE_INPUT:-}"
 REMOTE_OUTPUT=""
 PIX_FMT="${PIX_FMT:-HEVC}"
+RAW_PIX_FMT="${RAW_PIX_FMT:-YU12}"
+WIDTH="${WIDTH:-}"
+HEIGHT="${HEIGHT:-}"
 SIZEIMAGE="${SIZEIMAGE:-}"
 CAP_BUFS="${CAP_BUFS:-6}"
 OUT_BUFS="${OUT_BUFS:-6}"
@@ -26,7 +30,7 @@ DO_DEPLOY=1
 DO_RELOAD=1
 PULL_LOGS=1
 
-W4_BASE_PARAMS_DEFAULT="w4_use_reserved_mem=1 w4_wait_irq_cap_ms=5000"
+W4_BASE_PARAMS_DEFAULT="w4_use_reserved_mem=1"
 W4_BASE_PARAMS="${W4_BASE_PARAMS:-$W4_BASE_PARAMS_DEFAULT}"
 
 BASE_MODULE_PARAMS=()
@@ -37,15 +41,23 @@ usage() {
 Usage: w4_run_case.sh [options]
 
 Required (unless --v4l2-cmd is used):
-  --input <remote path>       Bitstream file on target board
+  --input <remote path>       Input file on target board
+                              decode mode: bitstream
+                              encode mode: raw YUV input
 
 Common options:
+  --mode <decode|encode>      Run mode (default: encode)
   --name <case>               Case name (default: timestamp)
-  --input <remote path>       Input bitstream path on target
-  --output <remote path>      Output YUV path on target (default: <case_dir>/out.yuv)
-  --device <node>             Video node (default: /dev/video0)
-  --pixfmt <fmt>              Output queue pixfmt (default: HEVC)
-  --sizeimage <bytes>         Output queue sizeimage override
+  --input <remote path>       Input file path on target
+  --output <remote path>      Output file path on target
+                              decode default: <case_dir>/out.yuv
+                              encode default: <case_dir>/out.h265
+  --device <node>             Video node (default: /dev/video1)
+  --pixfmt <fmt>              Codec queue pixfmt (default: HEVC)
+  --raw-pixfmt <fmt>          Raw input pixfmt for encode mode (default: YU12)
+  --width <px>                Frame width override
+  --height <px>               Frame height override
+  --sizeimage <bytes>         Sizeimage override (decode OUT or encode CAP)
   --cap-bufs <n>              --stream-mmap value (default: 6)
   --out-bufs <n>              --stream-out-mmap value (default: 6)
   --timeout-sec <n>           Remote v4l2 timeout in seconds (default: 45)
@@ -65,13 +77,17 @@ Deployment / target:
   -h, --help                  Show this help
 
 Environment:
-  W4_BASE_PARAMS defaults to "w4_use_reserved_mem=1 w4_wait_irq_cap_ms=5000"
+  W4_BASE_PARAMS defaults to "w4_use_reserved_mem=1"
   Set W4_BASE_PARAMS='' to disable built-in module params.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+  --mode)
+    MODE="$2"
+    shift 2
+    ;;
   --name)
     CASE_NAME="$2"
     shift 2
@@ -90,6 +106,18 @@ while [[ $# -gt 0 ]]; do
     ;;
   --pixfmt)
     PIX_FMT="$2"
+    shift 2
+    ;;
+  --raw-pixfmt)
+    RAW_PIX_FMT="$2"
+    shift 2
+    ;;
+  --width)
+    WIDTH="$2"
+    shift 2
+    ;;
+  --height)
+    HEIGHT="$2"
     shift 2
     ;;
   --sizeimage)
@@ -164,13 +192,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$MODE" != "decode" && "$MODE" != "encode" ]]; then
+  echo "--mode must be decode or encode" >&2
+  exit 1
+fi
+
 if [[ -z "$CASE_NAME" ]]; then
   CASE_NAME="$(date +%Y%m%d-%H%M%S)"
 fi
 
 REMOTE_CASE_DIR="$REMOTE_ROOT/$CASE_NAME"
 if [[ -z "$REMOTE_OUTPUT" ]]; then
-  REMOTE_OUTPUT="$REMOTE_CASE_DIR/out.yuv"
+  if [[ "$MODE" == "encode" ]]; then
+    REMOTE_OUTPUT="$REMOTE_CASE_DIR/out.h265"
+  else
+    REMOTE_OUTPUT="$REMOTE_CASE_DIR/out.yuv"
+  fi
 fi
 
 if [[ -z "$CUSTOM_V4L2_CMD" && -z "$REMOTE_INPUT" ]]; then
@@ -192,34 +229,96 @@ INSMOD_ARGS="${INSMOD_ARGS%" "}"
 INSMOD_ARGS_B64="$(printf '%s' "$INSMOD_ARGS" | base64 -w0)"
 
 if [[ -z "$CUSTOM_V4L2_CMD" ]]; then
-  fmt_opt="pixelformat=$PIX_FMT"
-  if [[ -n "$SIZEIMAGE" ]]; then
-    fmt_opt+=",sizeimage=$SIZEIMAGE"
-  fi
+  if [[ "$MODE" == "decode" ]]; then
+    fmt_parts=()
+    if [[ -n "$WIDTH" ]]; then
+      fmt_parts+=("width=$WIDTH")
+    fi
+    if [[ -n "$HEIGHT" ]]; then
+      fmt_parts+=("height=$HEIGHT")
+    fi
+    fmt_parts+=("pixelformat=$PIX_FMT")
+    if [[ -n "$SIZEIMAGE" ]]; then
+      fmt_parts+=("sizeimage=$SIZEIMAGE")
+    fi
+    fmt_opt="$(IFS=,; echo "${fmt_parts[*]}")"
 
-  v4l2_cmd=(
-    v4l2-ctl
-    -d "$REMOTE_DEVICE"
-    --verbose
-    "--set-fmt-video-out-mplane=$fmt_opt"
-    "--stream-mmap=$CAP_BUFS"
-    "--stream-out-mmap=$OUT_BUFS"
-    "--stream-from=$REMOTE_INPUT"
-    "--stream-to=$REMOTE_OUTPUT"
-    --stream-poll
-  )
+    v4l2_cmd=(
+      v4l2-ctl
+      -d "$REMOTE_DEVICE"
+      --verbose
+      "--set-fmt-video-out=$fmt_opt"
+      "--stream-mmap=$CAP_BUFS"
+      "--stream-out-mmap=$OUT_BUFS"
+      "--stream-from=$REMOTE_INPUT"
+      "--stream-to=$REMOTE_OUTPUT"
+      --stream-poll
+    )
+  else
+    out_fmt_parts=()
+    cap_fmt_parts=()
+
+    if [[ -n "$WIDTH" ]]; then
+      out_fmt_parts+=("width=$WIDTH")
+      cap_fmt_parts+=("width=$WIDTH")
+    fi
+    if [[ -n "$HEIGHT" ]]; then
+      out_fmt_parts+=("height=$HEIGHT")
+      cap_fmt_parts+=("height=$HEIGHT")
+    fi
+    out_fmt_parts+=("pixelformat=$RAW_PIX_FMT")
+    cap_fmt_parts+=("pixelformat=$PIX_FMT")
+
+    if [[ -n "$SIZEIMAGE" ]]; then
+      cap_fmt_parts+=("sizeimage=$SIZEIMAGE")
+    fi
+
+    out_fmt_opt="$(IFS=,; echo "${out_fmt_parts[*]}")"
+    cap_fmt_opt="$(IFS=,; echo "${cap_fmt_parts[*]}")"
+
+    v4l2_cmd=(
+      v4l2-ctl
+      -d "$REMOTE_DEVICE"
+      --verbose
+      "--set-fmt-video-out=$out_fmt_opt"
+      "--set-fmt-video=$cap_fmt_opt"
+      "--stream-mmap=$CAP_BUFS"
+      "--stream-out-mmap=$OUT_BUFS"
+      "--stream-from=$REMOTE_INPUT"
+      "--stream-to=$REMOTE_OUTPUT"
+      --stream-poll
+    )
+  fi
   printf -v CUSTOM_V4L2_CMD '%q ' "${v4l2_cmd[@]}"
 fi
 CUSTOM_V4L2_CMD_B64="$(printf '%s' "$CUSTOM_V4L2_CMD" | base64 -w0)"
 
 read -r -a ssh_argv <<<"$SSH_CMD"
+REMOTE_DO_RELOAD="$DO_RELOAD"
 
 if (( DO_DEPLOY )); then
+  deploy_args=(
+    --module "$LOCAL_MODULE"
+    --host "$TARGET_HOST"
+    --target "$TARGET_MODULE"
+    --ssh-cmd "$SSH_CMD"
+  )
+  if (( DO_RELOAD )); then
+    # Let deploy script enforce: unload -> reset-on-fail -> upload -> load.
+    for p in "${MODULE_PARAMS[@]}"; do
+      deploy_args+=(--insmod-param "$p")
+    done
+    REMOTE_DO_RELOAD=0
+  else
+    deploy_args+=(--skip-load)
+  fi
+
   TARGET_HOST="$TARGET_HOST" TARGET_MODULE="$TARGET_MODULE" SSH_CMD="$SSH_CMD" \
-    "$DEPLOY_SCRIPT" --module "$LOCAL_MODULE"
+    "$DEPLOY_SCRIPT" "${deploy_args[@]}"
 fi
 
 echo "running case: $CASE_NAME"
+echo "  mode        : $MODE"
 echo "  target      : $TARGET_HOST"
 echo "  remote dir  : $REMOTE_CASE_DIR"
 echo "  module path : $TARGET_MODULE"
@@ -231,7 +330,7 @@ fi
   "$REMOTE_CASE_DIR" \
   "$REMOTE_ROOT" \
   "$TARGET_MODULE" \
-  "$DO_RELOAD" \
+  "$REMOTE_DO_RELOAD" \
   "$INSMOD_ARGS_B64" \
   "$TIMEOUT_SEC" \
   "$CUSTOM_V4L2_CMD_B64" \
@@ -258,6 +357,10 @@ v4l2_cmd="$(printf '%s' "$v4l2_cmd_b64" | base64 -d)"
 if [ "$do_reload" = "1" ]; then
   modprobe -r wave4 2>/dev/null || true
   rmmod wave4 2>/dev/null || true
+  # Direct insmod does not pull dependencies; preload mem2mem/vb2 modules.
+  for m in videobuf2_common videobuf2_memops videobuf2_v4l2 videobuf2_dma_contig v4l2_mem2mem; do
+    modprobe "$m" 2>/dev/null || true
+  done
   if [ -n "$insmod_args" ]; then
     # shellcheck disable=SC2086
     insmod "$target_module" $insmod_args

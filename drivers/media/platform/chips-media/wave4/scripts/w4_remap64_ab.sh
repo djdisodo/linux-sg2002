@@ -6,6 +6,7 @@ RUN_CASE="$SCRIPT_DIR/w4_run_case.sh"
 
 INPUT="${INPUT:-/root/teststreams/girlshy.h265}"
 PREFIX="${PREFIX:-cont-remap64-ab-$(date +%Y%m%d-%H%M%S)}"
+REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video0}"
 PIX_FMT="${PIX_FMT:-HEVC}"
 SIZEIMAGE="${SIZEIMAGE:-}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-45}"
@@ -22,6 +23,7 @@ Runs two decode cases:
 Options:
   --input <remote path>      Bitstream path on target (default: /root/teststreams/girlshy.h265)
   --prefix <name>            Case-name prefix
+  --device <node>            Decoder node (default: /dev/video0)
   --pixfmt <fmt>             Output queue pixfmt (default: HEVC)
   --sizeimage <bytes>        Optional sizeimage override
   --timeout-sec <n>          Per-case timeout in seconds (default: 45)
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   --prefix)
     PREFIX="$2"
+    shift 2
+    ;;
+  --device)
+    REMOTE_DEVICE="$2"
     shift 2
     ;;
   --pixfmt)
@@ -72,7 +78,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 common_args=(
+  --mode decode
   --input "$INPUT"
+  --device "$REMOTE_DEVICE"
   --pixfmt "$PIX_FMT"
   --timeout-sec "$TIMEOUT_SEC"
 )
