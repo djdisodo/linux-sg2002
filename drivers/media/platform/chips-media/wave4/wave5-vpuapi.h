@@ -763,6 +763,7 @@ struct vpu_device {
 	struct reset_control *resets;
 	spinlock_t irq_spinlock; /* protect instances list */
 	bool fw_running;
+	bool reserved_mem_inited;
 };
 
 struct vpu_instance;

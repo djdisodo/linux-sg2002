@@ -32,6 +32,12 @@
 		#size-cells = <1>;
 		ranges;
 
+		vpu_reserved: region@86c00000 {
+			compatible = "shared-dma-pool";
+			reg = <0x86c00000 0x03e00000>;
+			reusable;
+		};
+
 		coprocessor_rtos: region@83f40000 {
 			reg = <0x83f40000 0xc0000>;
 			no-map;
@@ -111,5 +117,6 @@
 };
 
 &vpu {
+	memory-region = <&vpu_reserved>;
 	status = "okay";
 };

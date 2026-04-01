@@ -11,6 +11,7 @@
 #include <linux/firmware.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
 #include <linux/regmap.h>
@@ -458,15 +459,28 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, dev);
 	dev->dev = &pdev->dev;
 
+	ret = of_reserved_mem_device_init(&pdev->dev);
+	if (!ret) {
+		dev->reserved_mem_inited = true;
+		dev_info(&pdev->dev,
+			 "attached memory-region DMA pool for wave4 allocations\n");
+	} else if (ret != -ENODEV) {
+		return dev_err_probe(&pdev->dev, ret,
+				     "failed to attach memory-region DMA pool\n");
+	}
+
 	dev->resets = devm_reset_control_array_get_optional_exclusive(&pdev->dev);
 	if (IS_ERR(dev->resets)) {
-		return dev_err_probe(&pdev->dev, PTR_ERR(dev->resets),
-				     "Failed to get reset control\n");
+		ret = dev_err_probe(&pdev->dev, PTR_ERR(dev->resets),
+				    "Failed to get reset control\n");
+		goto err_rmem_release;
 	}
 
 	ret = reset_control_deassert(dev->resets);
-	if (ret)
-		return dev_err_probe(&pdev->dev, ret, "Failed to deassert resets\n");
+	if (ret) {
+		ret = dev_err_probe(&pdev->dev, ret, "Failed to deassert resets\n");
+		goto err_reset_assert;
+	}
 
 	ret = devm_clk_bulk_get_all(&pdev->dev, &dev->clks);
 
@@ -595,6 +609,9 @@ err_clk_dis:
 	clk_bulk_disable_unprepare(dev->num_clks, dev->clks);
 err_reset_assert:
 	reset_control_assert(dev->resets);
+err_rmem_release:
+	if (dev->reserved_mem_inited)
+		of_reserved_mem_device_release(&pdev->dev);
 
 	return ret;
 }
@@ -628,6 +645,8 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 	reset_control_assert(dev->resets);
 	clk_bulk_disable_unprepare(dev->num_clks, dev->clks);
 	wave4_vdi_release(&pdev->dev);
+	if (dev->reserved_mem_inited)
+		of_reserved_mem_device_release(&pdev->dev);
 	ida_destroy(&dev->inst_ida);
 }
 
