@@ -207,64 +207,15 @@ static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 				 const char *func);
 #define PRINT_REG_ERR(dev, reason)	_wave5_print_reg_err((dev), (reason), __func__)
 
-static int wave4_init_seq_dump_regs;
-module_param_named(w4_init_seq_dump_regs, wave4_init_seq_dump_regs, int, 0644);
-MODULE_PARM_DESC(w4_init_seq_dump_regs,
-		 "Wave4 debug: dump full INIT_SEQ register snapshot before DEC_PIC_HDR");
-
 static int wave4_allow_resident_fw_fallback = 1;
 module_param_named(w4_allow_resident_fw_fallback, wave4_allow_resident_fw_fallback, int, 0644);
 MODULE_PARM_DESC(w4_allow_resident_fw_fallback,
 		 "Allow using already-running resident firmware when INIT_VPU times out (1=default, 0=force failure)");
 
-static int wave4_vint_enable_mask = -1;
-module_param_named(w4_vint_enable_mask, wave4_vint_enable_mask, int, 0644);
-MODULE_PARM_DESC(w4_vint_enable_mask,
-		 "Override W4_VPU_VINT_ENABLE mask (-1=BSP default bits 1/3/9/10/15)");
-
-static int wave4_bs_endian_override = -1;
-module_param_named(w4_bs_endian_override, wave4_bs_endian_override, int, 0644);
-MODULE_PARM_DESC(w4_bs_endian_override,
-		 "Override W4_BS_PARAM endian nibble (-1=use default 0xF)");
-
-static int wave4_bs_option_override = -1;
-module_param_named(w4_bs_option_override, wave4_bs_option_override, int, 0644);
-MODULE_PARM_DESC(w4_bs_option_override,
-		 "Override W4_BS_OPTION value (-1=auto from stream_endflag)");
-
-static int wave4_dec_sec_axi_mask_override = -1;
-module_param_named(w4_dec_sec_axi_mask, wave4_dec_sec_axi_mask_override, int, 0644);
-MODULE_PARM_DESC(w4_dec_sec_axi_mask,
-		 "Override decoded W4_USE_SEC_AXI mask (-1=auto, 0=force off)");
-
-static int wave4_enc_sec_axi_mask_override = -1;
-module_param_named(w4_enc_sec_axi_mask, wave4_enc_sec_axi_mask_override, int, 0644);
-MODULE_PARM_DESC(w4_enc_sec_axi_mask,
-		 "Override encoder W4_USE_SEC_AXI mask (-1=auto, 0=force off)");
-
 static u32 wave4_resolve_bs_endian_nibble(void)
 {
-	if (READ_ONCE(wave4_bs_endian_override) >= 0)
-		return (u32)READ_ONCE(wave4_bs_endian_override) & 0xf;
-
 	/* Keep the proven Wave4 baseline fixed: 128-bit big-endian nibble. */
 	return BITSTREAM_ENDIANNESS_BIG_ENDIAN;
-}
-
-static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
-{
-	if (READ_ONCE(wave4_dec_sec_axi_mask_override) >= 0)
-		return (u32)READ_ONCE(wave4_dec_sec_axi_mask_override);
-
-	return sec_axi;
-}
-
-static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
-{
-	if (READ_ONCE(wave4_enc_sec_axi_mask_override) >= 0)
-		return (u32)READ_ONCE(wave4_enc_sec_axi_mask_override);
-
-	return sec_axi;
 }
 
 static inline u32 wave4_cmd_addr(dma_addr_t addr)
@@ -368,37 +319,8 @@ static inline u32 wave5_dec_seq_change_reg(struct vpu_device *vpu_dev)
 
 static void wave4_log_init_seq_regs(struct vpu_instance *inst, const char *tag)
 {
-	if (!READ_ONCE(wave4_init_seq_dump_regs))
-		return;
-
-	dev_info(inst->dev->dev,
-		 "w4 init-seq %s: bs[start=0x%x size=0x%x param=0x%x opt=0x%x rd=0x%x wr=0x%x] sec_axi[use=0x%x addr=0x%x size=0x%x] work[base=0x%x size=0x%x param=0x%x] temp[base=0x%x size=0x%x param=0x%x] user[mask=0x%x base=0x%x size=0x%x param=0x%x] report[base=0x%x size=0x%x param=0x%x] disp=0x%x cmd_opt=0x%x inst=0x%x\n",
-		 tag,
-		 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-		 vpu_read_reg(inst->dev, W4_BS_SIZE),
-		 vpu_read_reg(inst->dev, W4_BS_PARAM),
-		 vpu_read_reg(inst->dev, W4_BS_OPTION),
-		 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-		 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-		 vpu_read_reg(inst->dev, W4_USE_SEC_AXI),
-		 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
-		 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
-		 vpu_read_reg(inst->dev, W4_ADDR_WORK_BASE),
-		 vpu_read_reg(inst->dev, W4_WORK_SIZE),
-		 vpu_read_reg(inst->dev, W4_WORK_PARAM),
-		 vpu_read_reg(inst->dev, W4_ADDR_TEMP_BASE),
-		 vpu_read_reg(inst->dev, W4_TEMP_SIZE),
-		 vpu_read_reg(inst->dev, W4_TEMP_PARAM),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_MASK),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_ADDR_USER_BASE),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_SIZE),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_USER_PARAM),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_ADDR_REPORT_BASE),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_REPORT_SIZE),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_REPORT_PARAM),
-		 vpu_read_reg(inst->dev, W4_CMD_DEC_DISP_FLAG),
-		 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-		 vpu_read_reg(inst->dev, W4_INST_INDEX));
+	(void)inst;
+	(void)tag;
 }
 
 static inline const char *cmd_to_str(int cmd, bool is_dec)
@@ -954,9 +876,6 @@ static void setup_wave5_interrupts(struct vpu_device *vpu_dev)
 	/* Wave4 BSP enables DEC_PIC_HDR/SET_PARAM, DEC_PIC, QUERY_DEC, SLEEP/WAKE and BSBUF_EMPTY. */
 	u32 reg_val = BIT(1) | BIT(3) | BIT(9) | BIT(10) | BIT(15);
 
-	if (READ_ONCE(wave4_vint_enable_mask) >= 0)
-		reg_val = (u32)READ_ONCE(wave4_vint_enable_mask);
-
 	return vpu_write_reg(vpu_dev, W5_VPU_VINT_ENABLE, reg_val);
 }
 
@@ -1250,9 +1169,6 @@ static u32 get_bitstream_options(struct dec_info *info)
 {
 	u32 bs_option = 0;
 
-	if (READ_ONCE(wave4_bs_option_override) >= 0)
-		return (u32)READ_ONCE(wave4_bs_option_override);
-
 	if (info->stream_endflag)
 		bs_option |= BSOPTION_ENABLE_EXPLICIT_END |
 			     BSOPTION_HIGHLIGHT_STREAM_END;
@@ -1317,7 +1233,6 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	sec_axi = (p_dec_info->sec_axi_info.use_bit_enable << 0) |
 		  (p_dec_info->sec_axi_info.use_ip_enable << 9) |
 		  (p_dec_info->sec_axi_info.use_lf_row_enable << 15);
-	sec_axi = wave4_apply_dec_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
 		      sec_axi ? inst->dev->sram_buf.size : 0);
@@ -1713,7 +1628,6 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 
 	/* secondary AXI */
 	reg_val = wave5_vpu_dec_validate_sec_axi(inst);
-	reg_val = wave4_apply_dec_sec_axi_mask(reg_val);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, reg_val);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
@@ -2539,7 +2453,6 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		if (inst->dev->sram_buf.size)
 			sec_axi = (p_enc_info->sec_axi_info.use_enc_rdo_enable << 11) |
 				  (p_enc_info->sec_axi_info.use_enc_lf_enable << 15);
-		sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 		vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI,
 			      inst->dev->sram_buf.daddr);
 		vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
@@ -3116,7 +3029,6 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 
 	/* Secondary AXI + scratch regions are reprogrammed for ENC_PIC on Wave4. */
 	sec_axi = wave5_vpu_enc_validate_sec_axi(inst);
-	sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, inst->dev->sram_buf.size);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
