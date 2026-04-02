@@ -218,6 +218,16 @@ static u32 wave4_resolve_bs_endian_nibble(void)
 	return BITSTREAM_ENDIANNESS_BIG_ENDIAN;
 }
 
+static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
+{
+	return sec_axi;
+}
+
+static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
+{
+	return sec_axi;
+}
+
 static inline u32 wave4_cmd_addr(dma_addr_t addr)
 {
 	return (u32)addr;
@@ -904,7 +914,7 @@ static int setup_wave5_properties(struct device *dev)
 		return ret;
 	}
 
-	dev_info(dev, "w4 resident firmware revision: %u\n", fw_revision);
+	dev_dbg(dev, "w4 firmware revision: %u\n", fw_revision);
 	return 0;
 }
 
@@ -931,8 +941,8 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 	common_vb = &vpu_dev->common_mem;
 
 	code_base = common_vb->daddr;
-	dev_info(vpu_dev->dev, "w4 init: code_base=0x%llx fw_size=%zu\n",
-		 (unsigned long long)code_base, size);
+	dev_dbg(vpu_dev->dev, "w4 init: code_base=0x%llx fw_size=%zu\n",
+		(unsigned long long)code_base, size);
 
 	code_size = W4_MAX_CODE_BUF_SIZE;
 
@@ -1207,6 +1217,7 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	sec_axi = (p_dec_info->sec_axi_info.use_bit_enable << 0) |
 		  (p_dec_info->sec_axi_info.use_ip_enable << 9) |
 		  (p_dec_info->sec_axi_info.use_lf_row_enable << 15);
+	sec_axi = wave4_apply_dec_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
 		      sec_axi ? inst->dev->sram_buf.size : 0);
@@ -1599,6 +1610,7 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 
 	/* secondary AXI */
 	reg_val = wave5_vpu_dec_validate_sec_axi(inst);
+	reg_val = wave4_apply_dec_sec_axi_mask(reg_val);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, reg_val);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
@@ -1786,11 +1798,11 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 
 	old_code_base = vpu_read_reg(vpu_dev, W5_VPU_REMAP_PADDR);
 	expected_code_base = code_base;
-	dev_info(vpu_dev->dev,
-		 "w4 reinit: remap old=0x%llx expected=0x%llx code_base=0x%llx fw_size=%zu\n",
-		 (unsigned long long)old_code_base,
-		 (unsigned long long)expected_code_base,
-		 (unsigned long long)code_base, size);
+	dev_dbg(vpu_dev->dev,
+		"w4 reinit: remap old=0x%llx expected=0x%llx code_base=0x%llx fw_size=%zu\n",
+		(unsigned long long)old_code_base,
+		(unsigned long long)expected_code_base,
+		(unsigned long long)code_base, size);
 
 	if (old_code_base != expected_code_base) {
 		ret = wave5_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
@@ -2424,6 +2436,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		if (inst->dev->sram_buf.size)
 			sec_axi = (p_enc_info->sec_axi_info.use_enc_rdo_enable << 11) |
 				  (p_enc_info->sec_axi_info.use_enc_lf_enable << 15);
+		sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 		vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI,
 			      inst->dev->sram_buf.daddr);
 		vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
@@ -3000,6 +3013,7 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 
 	/* Secondary AXI + scratch regions are reprogrammed for ENC_PIC on Wave4. */
 	sec_axi = wave5_vpu_enc_validate_sec_axi(inst);
+	sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, inst->dev->sram_buf.size);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
@@ -3239,11 +3253,11 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 	result->enc_encode_end_tick = 0;
 	result->frame_cycle = vpu_read_reg(inst->dev, W4_RET_FRAME_CYCLE);
 	p_enc_info->first_cycle_check = true;
-	dev_info(inst->dev->dev,
-		 "w4 enc result: recon_idx=%d src_idx=%d pic_byte=%u pic_type=0x%x vcl=0x%x rd=0x%x wr=0x%x\n",
-		 result->recon_frame_index, result->enc_src_idx,
-		 result->enc_pic_byte, result->pic_type,
-		 result->enc_vcl_nut, (u32)result->rd_ptr, (u32)result->wr_ptr);
+	dev_dbg(inst->dev->dev,
+		"w4 enc result: recon_idx=%d src_idx=%d pic_byte=%u pic_type=0x%x vcl=0x%x rd=0x%x wr=0x%x\n",
+		result->recon_frame_index, result->enc_src_idx,
+		result->enc_pic_byte, result->pic_type,
+		result->enc_vcl_nut, (u32)result->rd_ptr, (u32)result->wr_ptr);
 
 	return 0;
 }
