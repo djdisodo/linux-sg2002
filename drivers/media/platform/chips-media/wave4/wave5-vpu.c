@@ -50,6 +50,10 @@ struct wave5_match_data {
 
 static int vpu_poll_interval = 5;
 module_param(vpu_poll_interval, int, 0644);
+static bool w4_forbid_runtime_pm;
+module_param(w4_forbid_runtime_pm, bool, 0644);
+MODULE_PARM_DESC(w4_forbid_runtime_pm,
+		 "Keep Wave4 runtime PM active (no autosuspend sleep/wake transitions)");
 
 /*
  * SG2002 Wave4 integrations can expose an IRQ resource that never increments
@@ -421,6 +425,9 @@ static __maybe_unused int wave5_pm_suspend(struct device *dev)
 {
 	struct vpu_device *vpu = dev_get_drvdata(dev);
 
+	if (w4_forbid_runtime_pm)
+		return 0;
+
 	if (pm_runtime_suspended(dev))
 		return 0;
 
@@ -437,6 +444,9 @@ static __maybe_unused int wave5_pm_resume(struct device *dev)
 {
 	struct vpu_device *vpu = dev_get_drvdata(dev);
 	int ret = 0;
+
+	if (w4_forbid_runtime_pm)
+		return 0;
 
 	wave4_vpu_sleep_wake(dev, false, NULL, 0);
 	ret = clk_bulk_prepare_enable(vpu->num_clks, vpu->clks);
@@ -579,6 +589,14 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		}
 		dev->vpu_poll_interval = vpu_poll_interval;
 		kthread_init_work(&dev->work, wave5_vpu_irq_work_fn);
+		/*
+		 * In polling mode, keep timer alive from probe when runtime PM
+		 * callbacks are intentionally bypassed in bring-up mode.
+		 */
+		if (w4_forbid_runtime_pm)
+			hrtimer_start(&dev->hrtimer,
+				      ns_to_ktime(dev->vpu_poll_interval * NSEC_PER_MSEC),
+				      HRTIMER_MODE_REL_PINNED);
 	} else {
 		ret = devm_request_threaded_irq(&pdev->dev, dev->irq, wave5_vpu_irq,
 						wave5_vpu_irq_thread, IRQF_ONESHOT, "vpu_irq", dev);
@@ -624,7 +642,17 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 500);
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
-	wave4_vpu_sleep_wake(&pdev->dev, true, NULL, 0);
+	if (w4_forbid_runtime_pm) {
+		/*
+		 * Keep runtime PM API usage intact while preventing
+		 * autosuspend transitions in bring-up mode.
+		 */
+		pm_runtime_forbid(&pdev->dev);
+		dev_warn(&pdev->dev,
+			 "runtime PM autosuspend forbidden by module param (w4_forbid_runtime_pm=1)\n");
+	} else {
+		wave4_vpu_sleep_wake(&pdev->dev, true, NULL, 0);
+	}
 
 	return 0;
 
@@ -680,6 +708,8 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 		kthread_destroy_worker(dev->worker);
 	}
 
+	if (w4_forbid_runtime_pm)
+		pm_runtime_allow(&pdev->dev);
 	pm_runtime_dont_use_autosuspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 
