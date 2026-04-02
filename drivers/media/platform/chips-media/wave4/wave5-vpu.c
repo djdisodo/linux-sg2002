@@ -39,6 +39,13 @@
 #define W4_INT_SET_PARAM_SEQ		BIT(1)
 #define W4_INT_PIC_RUN			BIT(3)
 #define W4_INT_QUERY			BIT(9)
+/*
+ * Wave420L-specific capability map observed on SG2002:
+ * - std_def1 bit16: HEVC encoder path present
+ * - std_def1 bit17: HEVC decoder path present
+ */
+#define W4_STD_DEF1_HEVC_ENC		BIT(16)
+#define W4_STD_DEF1_HEVC_DEC		BIT(17)
 
 struct wave5_match_data {
 	int flags;
@@ -46,6 +53,9 @@ struct wave5_match_data {
 	u32 sram_size;
 	bool allow_internal_sram;
 	bool force_polling_backend;
+	bool use_std_def1_caps;
+	u32 std_def1_enc_mask;
+	u32 std_def1_dec_mask;
 };
 
 static int vpu_poll_interval = 5;
@@ -496,6 +506,9 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	dev->has_encoder = !!(match_data->flags & WAVE5_IS_ENC);
 	dev->has_decoder = !!(match_data->flags & WAVE5_IS_DEC);
+	dev->hw_cap_from_std_def1 = match_data->use_std_def1_caps;
+	dev->hw_std_def1_enc_mask = match_data->std_def1_enc_mask;
+	dev->hw_std_def1_dec_mask = match_data->std_def1_dec_mask;
 
 	dev->vdb_register = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(dev->vdb_register))
@@ -609,8 +622,26 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 						wave5_vpu_irq_thread, IRQF_ONESHOT, "vpu_irq", dev);
 		if (ret) {
 			dev_err(&pdev->dev, "Register interrupt handler, fail: %d\n", ret);
-			goto err_enc_unreg;
+			goto err_irq_release;
 		}
+	}
+
+	ret = wave5_vpu_load_firmware(&pdev->dev, match_data->fw_name, &fw_revision);
+	if (ret) {
+		dev_err(&pdev->dev, "wave5_vpu_load_firmware, fail: %d\n", ret);
+		goto err_irq_release;
+	}
+
+	if (dev->hw_cap_queried) {
+		dev_info(&pdev->dev,
+			 "wave4 capability query: std_def0=0x%08x std_def1=0x%08x conf=0x%08x masks(enc=0x%08x dec=0x%08x) => enc=%u dec=%u\n",
+			 dev->hw_std_def0, dev->hw_std_def1, dev->hw_conf_feature,
+			 dev->hw_std_def1_enc_mask, dev->hw_std_def1_dec_mask,
+			 dev->has_encoder, dev->has_decoder);
+	} else if (dev->hw_cap_from_std_def1) {
+		dev_warn(&pdev->dev,
+			 "wave4 capability query not available; using DT flags (enc=%u dec=%u)\n",
+			 dev->has_encoder, dev->has_decoder);
 	}
 
 	ret = v4l2_device_register(&pdev->dev, &dev->v4l2_dev);
@@ -620,24 +651,24 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	}
 
 	if (dev->has_decoder) {
+		dev_info(&pdev->dev, "capability: registering decoder device\n");
 		ret = wave4_vpu_dec_register_device(dev);
 		if (ret) {
 			dev_err(&pdev->dev, "wave4_vpu_dec_register_device, fail: %d\n", ret);
 			goto err_v4l2_unregister;
 		}
+	} else {
+		dev_info(&pdev->dev, "capability: decoder disabled, skip decoder registration\n");
 	}
 	if (dev->has_encoder) {
+		dev_info(&pdev->dev, "capability: registering encoder device\n");
 		ret = wave4_vpu_enc_register_device(dev);
 		if (ret) {
 			dev_err(&pdev->dev, "wave4_vpu_enc_register_device, fail: %d\n", ret);
 			goto err_dec_unreg;
 		}
-	}
-
-	ret = wave5_vpu_load_firmware(&pdev->dev, match_data->fw_name, &fw_revision);
-	if (ret) {
-		dev_err(&pdev->dev, "wave5_vpu_load_firmware, fail: %d\n", ret);
-		goto err_enc_unreg;
+	} else {
+		dev_info(&pdev->dev, "capability: encoder disabled, skip encoder registration\n");
 	}
 
 	dev_info(&pdev->dev, "Added wave4 driver with caps: %s %s\n",
@@ -666,9 +697,6 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 
 	return 0;
 
-err_enc_unreg:
-	if (dev->has_encoder)
-		wave4_vpu_enc_unregister_device(dev);
 err_dec_unreg:
 	if (dev->has_decoder)
 		wave4_vpu_dec_unregister_device(dev);
@@ -742,6 +770,9 @@ static const struct wave5_match_data sophgo_wave4_data = {
 	.fw_name = "fw_vcodec/monet.bin",
 	.allow_internal_sram = true,
 	.force_polling_backend = true,
+	.use_std_def1_caps = true,
+	.std_def1_enc_mask = W4_STD_DEF1_HEVC_ENC,
+	.std_def1_dec_mask = W4_STD_DEF1_HEVC_DEC,
 };
 
 static const struct of_device_id wave5_dt_ids[] = {

@@ -912,6 +912,11 @@ static int setup_wave5_properties(struct device *dev)
 	struct vpu_attr *p_attr = &vpu_dev->attr;
 	int ret;
 	u32 fw_revision = 0;
+	u32 std_def0;
+	u32 std_def1;
+	u32 conf_feature;
+	bool has_enc;
+	bool has_dec;
 
 	memset(p_attr->product_name, 0, sizeof(p_attr->product_name));
 	p_attr->product_name[0] = '4';
@@ -919,19 +924,34 @@ static int setup_wave5_properties(struct device *dev)
 	p_attr->product_name[2] = '0';
 	p_attr->product_name[3] = 'L';
 	p_attr->product_id = PRODUCT_ID_W4;
-	p_attr->support_decoders = vpu_dev->has_decoder ? BIT(STD_HEVC) : 0;
-	p_attr->support_encoders = vpu_dev->has_encoder ? BIT(STD_HEVC) : 0;
 	p_attr->support_backbone = 0;
 	p_attr->support_vcpu_backbone = 0;
 	p_attr->support_vcore_backbone = 0;
-
-	setup_wave5_interrupts(vpu_dev);
 
 	ret = wave4_get_fw_version(vpu_dev, &fw_revision);
 	if (ret) {
 		dev_err(dev, "w4 GET_FW_VERSION ping failed: %d\n", ret);
 		return ret;
 	}
+
+	std_def0 = vpu_read_reg(vpu_dev, W5_RET_STD_DEF0);
+	std_def1 = vpu_read_reg(vpu_dev, W5_RET_STD_DEF1);
+	conf_feature = vpu_read_reg(vpu_dev, W5_RET_CONF_FEATURE);
+	vpu_dev->hw_std_def0 = std_def0;
+	vpu_dev->hw_std_def1 = std_def1;
+	vpu_dev->hw_conf_feature = conf_feature;
+	vpu_dev->hw_cap_queried = true;
+
+	if (vpu_dev->hw_cap_from_std_def1) {
+		has_enc = !!(std_def1 & vpu_dev->hw_std_def1_enc_mask);
+		has_dec = !!(std_def1 & vpu_dev->hw_std_def1_dec_mask);
+		vpu_dev->has_encoder = has_enc;
+		vpu_dev->has_decoder = has_dec;
+	}
+
+	p_attr->support_decoders = vpu_dev->has_decoder ? BIT(STD_HEVC) : 0;
+	p_attr->support_encoders = vpu_dev->has_encoder ? BIT(STD_HEVC) : 0;
+	setup_wave5_interrupts(vpu_dev);
 
 	dev_dbg(dev, "w4 firmware revision: %u\n", fw_revision);
 	return 0;

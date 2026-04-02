@@ -768,6 +768,13 @@ struct vpu_device {
 	bool has_decoder;
 	bool fw_running;
 	bool reserved_mem_inited;
+	bool hw_cap_from_std_def1;
+	bool hw_cap_queried;
+	u32 hw_std_def0;
+	u32 hw_std_def1;
+	u32 hw_conf_feature;
+	u32 hw_std_def1_enc_mask;
+	u32 hw_std_def1_dec_mask;
 };
 
 struct vpu_instance;
