@@ -156,3 +156,6 @@ cat /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
   - strongly suggests previous autosuspend instability was caused by dropping PM ref too early in async mode
 - `pmC3b-auto10-smoke-20260402-244658322` (post-fix regression smoke):
   - strict result: `3/3` clean outputs, no sequence errors
+- `pmA5-reload-on-pmhold-20260402-1584817623` (post-fix, `control=on`, reload each iteration):
+  - strict result: `4/4` clean outputs (`v4l2.rc=0`, output size `2205`, no `Sequence not found`)
+  - confirms async PM ref-hold fix does not regress reload-based encode path in this sample
