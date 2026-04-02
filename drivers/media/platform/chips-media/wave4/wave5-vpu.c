@@ -61,15 +61,6 @@ module_param_named(w4_poll_mode, wave4_poll_mode, int, 0644);
 MODULE_PARM_DESC(w4_poll_mode,
 		 "Use polling-based IRQ handling (0=threaded IRQ, 1=polling default)");
 
-/*
- * Keep these symbols available for the shared Wave4 hw path, but default to
- * disabled fixed-layout decode buffers in the cleaned driver.
- */
-int wave4_common_layout_mode;
-int wave4_common_work_offset_mb = 4;
-int wave4_common_bs_offset_mb = 8;
-int wave4_common_bs_size_mb = 4;
-
 int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 {
 	unsigned int wait_ms = timeout;

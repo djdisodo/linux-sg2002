@@ -317,12 +317,6 @@ static inline u32 wave5_dec_seq_change_reg(struct vpu_device *vpu_dev)
 	return W4_CMD_SEQ_CHANGE_ENABLE_FLAG;
 }
 
-static void wave4_log_init_seq_regs(struct vpu_instance *inst, const char *tag)
-{
-	(void)inst;
-	(void)tag;
-}
-
 static inline const char *cmd_to_str(int cmd, bool is_dec)
 {
 	switch (cmd) {
@@ -1038,33 +1032,9 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 static int wave4_alloc_dec_workbuf(struct vpu_instance *inst)
 {
 	struct vpu_buf *work = &inst->codec_info->dec_info.vb_work;
-	struct vpu_buf *common = &inst->dev->common_mem;
 	int ret;
 
 	work->size = W4_DEC_WORKBUF_SIZE;
-	if (READ_ONCE(wave4_common_layout_mode)) {
-		int off_mb = READ_ONCE(wave4_common_work_offset_mb);
-		size_t off;
-
-		if (off_mb < 0)
-			return -EINVAL;
-
-		off = (size_t)off_mb * 1024 * 1024;
-
-		if (!common->vaddr || common->size < off + work->size)
-			return -ENOMEM;
-
-		work->daddr = common->daddr + off;
-		work->vaddr = (u8 *)common->vaddr + off;
-		work->from_common = true;
-
-		ret = wave5_vdi_clear_memory(inst->dev, work);
-		if (ret < 0)
-			memset(work, 0, sizeof(*work));
-
-		return ret < 0 ? ret : 0;
-	}
-
 	ret = wave5_vdi_allocate_dma_memory(inst->dev, work);
 	if (ret) {
 		memset(work, 0, sizeof(*work));
@@ -1261,7 +1231,6 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 
 	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), INIT_SEQ_NORMAL);
 	vpu_write_reg(inst->dev, wave5_dec_force_fb_latency_reg(inst->dev), 0);
-	wave4_log_init_seq_regs(inst, "pre");
 
 	/*
 	 * Match BSP flow: DEC_PIC_HDR is issued here without a BUSY wait.
@@ -1366,8 +1335,6 @@ int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 		u32 dec_err;
 		u32 dec_err_w5;
 		u32 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end;
-
-		wave4_log_init_seq_regs(inst, "fail");
 
 		/* Keep this explicit cross-bank dump for Wave4/Wave5 err-info parity checks. */
 		dec_err_w5 = vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO);
