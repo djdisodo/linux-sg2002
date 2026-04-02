@@ -1492,10 +1492,12 @@ static int wave5_vpu_enc_start_streaming(struct vb2_queue *q, unsigned int count
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
-	int ret = 0;
+	int ret;
 
 	p_enc_info->stop_pending = false;
-	pm_runtime_resume_and_get(inst->dev->dev);
+	ret = pm_runtime_resume_and_get(inst->dev->dev);
+	if (ret < 0)
+		return ret;
 	v4l2_m2m_update_start_streaming_state(m2m_ctx, q);
 
 	if (inst->state == VPU_INST_STATE_NONE && q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
@@ -1595,6 +1597,7 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 {
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+	int ret;
 	bool check_cmd = true;
 
 	/*
@@ -1603,7 +1606,17 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 	 */
 
 	dev_dbg(inst->dev->dev, "%s: type: %u\n", __func__, q->type);
-	pm_runtime_resume_and_get(inst->dev->dev);
+	ret = pm_runtime_resume_and_get(inst->dev->dev);
+	if (ret < 0) {
+		dev_warn(inst->dev->dev,
+			 "%s: pm_runtime_resume_and_get failed: %d, forcing buffer cleanup only\n",
+			 __func__, ret);
+		if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
+			streamoff_output(inst, q);
+		else
+			streamoff_capture(inst, q);
+		return;
+	}
 	p_enc_info->stop_pending = true;
 
 	if (wave5_vpu_both_queues_are_streaming(inst))
@@ -1677,9 +1690,16 @@ static void wave5_vpu_enc_device_run(void *priv)
 	struct vpu_instance *inst = priv;
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
 	u32 fail_res = 0;
-	int ret = 0;
+	int ret;
 
-	pm_runtime_resume_and_get(inst->dev->dev);
+	ret = pm_runtime_resume_and_get(inst->dev->dev);
+	if (ret < 0) {
+		dev_warn(inst->dev->dev,
+			 "%s: pm_runtime_resume_and_get failed: %d\n",
+			 __func__, ret);
+		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+		return;
+	}
 	switch (inst->state) {
 	case VPU_INST_STATE_PIC_RUN:
 		ret = start_encode(inst, &fail_res);
