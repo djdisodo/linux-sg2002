@@ -92,15 +92,13 @@ fi
 echo "=== baseline ==="
 "$RUN_CASE" \
   "${common_args[@]}" \
-  --name "${PREFIX}-baseline" \
-  --param "w4_init_seq_dump_regs=1"
+  --name "${PREFIX}-baseline"
 
 echo "=== remap64 ==="
 "$RUN_CASE" \
   "${common_args[@]}" \
   --name "${PREFIX}-remap64" \
   --skip-deploy \
-  --param "w4_init_seq_dump_regs=1" \
   --param "w4_vc_remap64=${REMAP64_VALUE}"
 
 echo

@@ -55,8 +55,7 @@ Single decode case:
   --device /dev/video0 \
   --name hevc-dec-baseline \
   --input /mnt/storage/sintel_272p_head4m.h265 \
-  --pixfmt HEVC \
-  --param w4_init_seq_dump_regs=1
+  --pixfmt HEVC
 ```
 
 Single case with custom command:
