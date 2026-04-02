@@ -45,6 +45,7 @@ struct wave5_match_data {
 	const char *fw_name;
 	u32 sram_size;
 	bool allow_internal_sram;
+	bool force_polling_backend;
 };
 
 static int vpu_poll_interval = 5;
@@ -566,6 +567,11 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&dev->instances);
 
 	dev->irq = platform_get_irq(pdev, 0);
+	if (match_data->force_polling_backend && dev->irq >= 0) {
+		dev_warn(&pdev->dev,
+			 "forcing polling backend for Wave420L platform\n");
+		dev->irq = -1;
+	}
 	if (READ_ONCE(wave4_poll_mode))
 		dev->irq = -1;
 	if (dev->irq < 0) {
@@ -704,6 +710,7 @@ static const struct wave5_match_data sophgo_wave4_data = {
 	.flags = WAVE5_IS_ENC | WAVE5_IS_DEC,
 	.fw_name = "fw_vcodec/monet.bin",
 	.allow_internal_sram = true,
+	.force_polling_backend = true,
 };
 
 static const struct of_device_id wave5_dt_ids[] = {
