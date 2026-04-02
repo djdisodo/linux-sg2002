@@ -255,6 +255,28 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	return 0;
 }
 
+static void wave5_vpu_enc_complete_pending_src(struct vpu_instance *inst,
+					       enum vb2_buffer_state state)
+{
+	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+	struct vb2_buffer *vb;
+	struct vb2_v4l2_buffer *src_buf;
+
+	if (p_enc_info->pending_src_idx < 0)
+		return;
+
+	vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx), p_enc_info->pending_src_idx);
+	if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
+		src_buf = to_vb2_v4l2_buffer(vb);
+		if (state == VB2_BUF_STATE_DONE)
+			inst->timestamp = src_buf->vb2_buf.timestamp;
+		v4l2_m2m_buf_done(src_buf, state);
+	}
+
+	p_enc_info->pending_src_idx = -1;
+}
+
 static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
@@ -263,6 +285,18 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 	struct enc_output_info enc_output_info;
 	struct vb2_v4l2_buffer *src_buf = NULL;
 	struct vb2_v4l2_buffer *dst_buf = NULL;
+
+	/*
+	 * Crash-guard: streamoff can race with delayed ENC_PIC completions.
+	 * Once stopping starts, never touch ready queues from this callback.
+	 * We only retire the known inflight source buffer to avoid leaving it
+	 * ACTIVE, then exit quietly.
+	 */
+	if (p_enc_info->stop_pending || inst->state != VPU_INST_STATE_PIC_RUN ||
+	    !wave5_vpu_both_queues_are_streaming(inst)) {
+		wave5_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
+		return;
+	}
 
 	ret = wave5_vpu_enc_get_output_info(inst, &enc_output_info);
 	if (ret) {
@@ -281,17 +315,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 		 * report queue entry. Only complete the known in-flight source index
 		 * (if still ACTIVE) plus one pending destination buffer.
 		 */
-		if (p_enc_info->pending_src_idx >= 0) {
-			struct vb2_buffer *vb;
-
-			vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
-					    p_enc_info->pending_src_idx);
-			if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
-				src_buf = to_vb2_v4l2_buffer(vb);
-				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
-			}
-			p_enc_info->pending_src_idx = -1;
-		}
+		wave5_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
 		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
 		if (dst_buf) {
 			vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
@@ -316,10 +340,11 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 	if (enc_output_info.enc_src_idx >= 0) {
 		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
 						       enc_output_info.enc_src_idx);
-		if (vb->state != VB2_BUF_STATE_ACTIVE)
-			dev_warn(inst->dev->dev,
-				 "%s: encoded buffer (%d) was not in ready queue %i.",
-				 __func__, enc_output_info.enc_src_idx, vb->state);
+		if (!vb || vb->state != VB2_BUF_STATE_ACTIVE)
+			dev_dbg(inst->dev->dev,
+				"%s: stale completion for src_idx=%d (vb_state=%d)\n",
+				__func__, enc_output_info.enc_src_idx,
+				vb ? vb->state : -1);
 		else
 			src_buf = to_vb2_v4l2_buffer(vb);
 
@@ -328,8 +353,8 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
 			p_enc_info->pending_src_idx = -1;
 		} else {
-			dev_warn(inst->dev->dev, "%s: no source buffer with index: %d found\n",
-				 __func__, enc_output_info.enc_src_idx);
+			dev_dbg(inst->dev->dev, "%s: no source buffer with index: %d found\n",
+				__func__, enc_output_info.enc_src_idx);
 			p_enc_info->pending_src_idx = -1;
 		}
 	}
@@ -339,15 +364,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 	 * buffer so streamoff does not leave it ACTIVE.
 	 */
 	if (!src_buf && p_enc_info->pending_src_idx >= 0) {
-		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
-						       p_enc_info->pending_src_idx);
-
-		if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
-			src_buf = to_vb2_v4l2_buffer(vb);
-			inst->timestamp = src_buf->vb2_buf.timestamp;
-			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
-		}
-		p_enc_info->pending_src_idx = -1;
+		wave5_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_DONE);
 	}
 
 	dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
@@ -368,7 +385,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	} else {
 		if (!dst_buf) {
-			dev_warn(inst->dev->dev, "No bitstream buffer.");
+			dev_dbg(inst->dev->dev, "No bitstream buffer.");
 			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 			return;
 		}
@@ -1474,8 +1491,10 @@ static int wave5_vpu_enc_start_streaming(struct vb2_queue *q, unsigned int count
 {
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret = 0;
 
+	p_enc_info->stop_pending = false;
 	pm_runtime_resume_and_get(inst->dev->dev);
 	v4l2_m2m_update_start_streaming_state(m2m_ctx, q);
 
@@ -1575,6 +1594,7 @@ static void streamoff_capture(struct vpu_instance *inst, struct vb2_queue *q)
 static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 {
 	struct vpu_instance *inst = vb2_get_drv_priv(q);
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	bool check_cmd = true;
 
 	/*
@@ -1584,6 +1604,7 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 
 	dev_dbg(inst->dev->dev, "%s: type: %u\n", __func__, q->type);
 	pm_runtime_resume_and_get(inst->dev->dev);
+	p_enc_info->stop_pending = true;
 
 	if (wave5_vpu_both_queues_are_streaming(inst))
 		switch_state(inst, VPU_INST_STATE_STOP);
@@ -1603,6 +1624,15 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 		if (wave5_vpu_enc_get_output_info(inst, &enc_output_info))
 			dev_dbg(inst->dev->dev, "Getting encoding results from fw, fail\n");
 	}
+
+	/*
+	 * Crash-guard: start_encode() removes one source buffer from m2m ready
+	 * queue and leaves it ACTIVE until finish_encode() reports enc_src_idx.
+	 * On streamoff races, that callback may never safely consume queues.
+	 * Force-complete the tracked inflight source here to avoid VB2 warning:
+	 * "stop_streaming operation is leaving buffer ... in active state".
+	 */
+	wave5_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
 
 	if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 		streamoff_output(inst, q);
@@ -1688,12 +1718,15 @@ static int wave5_vpu_enc_job_ready(void *priv)
 {
 	struct vpu_instance *inst = priv;
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
 	switch (inst->state) {
 	case VPU_INST_STATE_NONE:
 		dev_dbg(inst->dev->dev, "Encoder must be open to start queueing M2M jobs!\n");
 		return false;
 	case VPU_INST_STATE_PIC_RUN:
+		if (p_enc_info->stop_pending)
+			return false;
 		if (m2m_ctx->is_draining || v4l2_m2m_num_src_bufs_ready(m2m_ctx)) {
 			dev_dbg(inst->dev->dev, "Encoder ready for a job, state: %s\n",
 				state_to_str(inst->state));
