@@ -34,7 +34,7 @@
 
 		vpu_reserved: region@86c00000 {
 			compatible = "shared-dma-pool";
-			reg = <0x86c00000 0x03e00000>;
+			reg = <0x86c00000 0x05000000>;
 			reusable;
 		};
 
