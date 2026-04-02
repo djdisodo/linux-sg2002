@@ -647,6 +647,11 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 500);
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
+	/*
+	 * Do not issue a direct SLEEP command here: that bypasses runtime PM
+	 * state accounting and can leave PM core believing the device is active
+	 * while firmware is already asleep.
+	 */
 	if (w4_forbid_runtime_pm) {
 		/*
 		 * Keep runtime PM API usage intact while preventing
@@ -655,8 +660,6 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		pm_runtime_forbid(&pdev->dev);
 		dev_warn(&pdev->dev,
 			 "runtime PM autosuspend forbidden by module param (w4_forbid_runtime_pm=1)\n");
-	} else {
-		wave4_vpu_sleep_wake(&pdev->dev, true, NULL, 0);
 	}
 
 	return 0;
