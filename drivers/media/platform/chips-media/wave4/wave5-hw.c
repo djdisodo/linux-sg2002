@@ -881,8 +881,27 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 
 static void setup_wave5_interrupts(struct vpu_device *vpu_dev)
 {
-	/* Wave4 BSP enables DEC_PIC_HDR/SET_PARAM, DEC_PIC, QUERY_DEC, SLEEP/WAKE and BSBUF_EMPTY. */
-	u32 reg_val = BIT(1) | BIT(3) | BIT(9) | BIT(10) | BIT(15);
+	u32 reg_val = 0;
+
+	/*
+	 * Keep upstream-style interrupt gating based on exposed capabilities.
+	 * Wave420L uses shared reason bits for encode/decode PIC/SET_PARAM paths.
+	 */
+	if (vpu_dev->attr.support_encoders) {
+		reg_val |= BIT(1);  /* SET_PARAM/SEQ */
+		reg_val |= BIT(3);  /* ENC_PIC */
+		reg_val |= BIT(9);  /* QUERY */
+		reg_val |= BIT(10); /* SLEEP/WAKE */
+		reg_val |= BIT(15); /* BSBUF_FULL */
+	}
+
+	if (vpu_dev->attr.support_decoders) {
+		reg_val |= BIT(1);  /* INIT_SEQ */
+		reg_val |= BIT(3);  /* DEC_PIC */
+		reg_val |= BIT(9);  /* QUERY_DEC */
+		reg_val |= BIT(10); /* SLEEP/WAKE */
+		reg_val |= BIT(15); /* BSBUF_EMPTY */
+	}
 
 	return vpu_write_reg(vpu_dev, W5_VPU_VINT_ENABLE, reg_val);
 }
@@ -900,8 +919,8 @@ static int setup_wave5_properties(struct device *dev)
 	p_attr->product_name[2] = '0';
 	p_attr->product_name[3] = 'L';
 	p_attr->product_id = PRODUCT_ID_W4;
-	p_attr->support_decoders = BIT(STD_HEVC);
-	p_attr->support_encoders = BIT(STD_HEVC);
+	p_attr->support_decoders = vpu_dev->has_decoder ? BIT(STD_HEVC) : 0;
+	p_attr->support_encoders = vpu_dev->has_encoder ? BIT(STD_HEVC) : 0;
 	p_attr->support_backbone = 0;
 	p_attr->support_vcpu_backbone = 0;
 	p_attr->support_vcore_backbone = 0;

@@ -764,6 +764,8 @@ struct vpu_device {
 	struct semaphore irq_sem; /* signal to irq_thread when interrupt happens*/
 	struct reset_control *resets;
 	spinlock_t irq_spinlock; /* protect instances list */
+	bool has_encoder;
+	bool has_decoder;
 	bool fw_running;
 	bool reserved_mem_inited;
 };

@@ -494,6 +494,8 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
+	dev->has_encoder = !!(match_data->flags & WAVE5_IS_ENC);
+	dev->has_decoder = !!(match_data->flags & WAVE5_IS_DEC);
 
 	dev->vdb_register = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(dev->vdb_register))
@@ -617,14 +619,14 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		goto err_irq_release;
 	}
 
-	if (match_data->flags & WAVE5_IS_DEC) {
+	if (dev->has_decoder) {
 		ret = wave4_vpu_dec_register_device(dev);
 		if (ret) {
 			dev_err(&pdev->dev, "wave4_vpu_dec_register_device, fail: %d\n", ret);
 			goto err_v4l2_unregister;
 		}
 	}
-	if (match_data->flags & WAVE5_IS_ENC) {
+	if (dev->has_encoder) {
 		ret = wave4_vpu_enc_register_device(dev);
 		if (ret) {
 			dev_err(&pdev->dev, "wave4_vpu_enc_register_device, fail: %d\n", ret);
@@ -639,8 +641,8 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	}
 
 	dev_info(&pdev->dev, "Added wave4 driver with caps: %s %s\n",
-		 (match_data->flags & WAVE5_IS_ENC) ? "'ENCODE'" : "",
-		 (match_data->flags & WAVE5_IS_DEC) ? "'DECODE'" : "");
+		 dev->has_encoder ? "'ENCODE'" : "",
+		 dev->has_decoder ? "'DECODE'" : "");
 	dev_info(&pdev->dev, "Product Code:      0x%x\n", dev->product_code);
 	dev_info(&pdev->dev, "Firmware Revision: %u\n", fw_revision);
 
@@ -665,10 +667,10 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 	return 0;
 
 err_enc_unreg:
-	if (match_data->flags & WAVE5_IS_ENC)
+	if (dev->has_encoder)
 		wave4_vpu_enc_unregister_device(dev);
 err_dec_unreg:
-	if (match_data->flags & WAVE5_IS_DEC)
+	if (dev->has_decoder)
 		wave4_vpu_dec_unregister_device(dev);
 err_v4l2_unregister:
 	v4l2_device_unregister(&dev->v4l2_dev);
@@ -700,8 +702,10 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 {
 	struct vpu_device *dev = dev_get_drvdata(&pdev->dev);
 
-	wave4_vpu_enc_unregister_device(dev);
-	wave4_vpu_dec_unregister_device(dev);
+	if (dev->has_encoder)
+		wave4_vpu_enc_unregister_device(dev);
+	if (dev->has_decoder)
+		wave4_vpu_dec_unregister_device(dev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 
 	if (dev->irq < 0) {
@@ -733,7 +737,8 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 }
 
 static const struct wave5_match_data sophgo_wave4_data = {
-	.flags = WAVE5_IS_ENC | WAVE5_IS_DEC,
+	/* Keep DT match flags as the userspace-visible capability contract. */
+	.flags = WAVE5_IS_ENC,
 	.fw_name = "fw_vcodec/monet.bin",
 	.allow_internal_sram = true,
 	.force_polling_backend = true,
