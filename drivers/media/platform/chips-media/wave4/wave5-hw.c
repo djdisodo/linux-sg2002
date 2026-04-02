@@ -239,7 +239,11 @@ static u32 wave4_translate_command(u32 cmd)
 	case W5_INIT_VPU:
 		return W4_CMD_INIT_VPU;
 	case W5_WAKEUP_VPU:
-		return W4_CMD_WAKEUP_VPU;
+		/*
+		 * Wave420L BSP wake restore re-enters firmware through INIT_VPU
+		 * (after remap/reset programming) instead of WAKEUP_VPU.
+		 */
+		return W4_CMD_INIT_VPU;
 	case W5_SLEEP_VPU:
 		return W4_CMD_SLEEP_VPU;
 	case W5_CREATE_INSTANCE:
