@@ -133,3 +133,18 @@ cat /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
   - result: `ok=6 fail=0`
   - no `VIDIOC_STREAMON failed`, no `Sequence not found`
   - strong indication that the dominant instability is in module reload/probe resident-fw re-init path, not steady-state async encode operation
+- `pmA4-reload-on-20260402-233555` (PM allowed, `control=on`, reload each iteration):
+  - loop summary reported `ok=2 fail=4`, but failures were dominated by SSH/transport timeouts during wrapper/log collection
+  - captured case logs (`r2/r3/r4/r6`) show `v4l2.rc=0`, output size `2205`, and no `Sequence not found`
+  - this run is inconclusive for PM behavior due network transport noise
+- `pmNR2-on-singleload-20260402-233900` (PM allowed, `control=on`, single load/no reload):
+  - result: `ok=6 fail=0`
+  - all runs had `v4l2.rc=0`, output size `2205`, and no sequence errors
+  - reinforces that no-reload path is stable when suspend/resume transitions are blocked
+- `pmC2-auto10-singleload-20260402-323487385` (PM allowed, `control=auto`, `autosuspend_delay_ms=10`, single load/no reload):
+  - wrapper summary: `ok=6 fail=0`; strict result: `5/6` good outputs
+  - `r6` had `v4l2.rc=0` but output size `0` and dmesg:
+    - `w4 enc seq_info failed ...`
+    - `Sequence not found: -5`
+  - `runtime_status` observed as `suspended` after each iteration, confirming suspend/resume transitions are happening
+  - indicates runtime PM path is still unstable under aggressive autosuspend even without module reload
