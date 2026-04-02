@@ -225,12 +225,7 @@ static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
 
 static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
 {
-	/*
-	 * Temporary diagnostic guard:
-	 * Wave420L can stall at ENC_SET_PARAM with use=0x8800 when sec-axi
-	 * sizing is not validated per-resolution.
-	 */
-	return 0;
+	return sec_axi;
 }
 
 static inline u32 wave4_cmd_addr(dma_addr_t addr)
@@ -1204,6 +1199,7 @@ static u32 get_bitstream_options(struct dec_info *info)
 }
 
 static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst);
+static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size);
 
 int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 {
@@ -2272,6 +2268,8 @@ int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 
 	p_enc_info->cycle_per_tick = 256;
 	if (vpu_dev->sram_buf.size) {
+		/* Wave4 HEVC encode uses bit9(bit-imd), bit11(rdo), bit15(lf). */
+		p_enc_info->sec_axi_info.use_ip_enable = 1;
 		p_enc_info->sec_axi_info.use_enc_rdo_enable = 1;
 		p_enc_info->sec_axi_info.use_enc_lf_enable = 1;
 	}
@@ -2455,7 +2453,8 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 				p_open_param->pic_height);
 
 	{
-		u32 src_width, src_height, frame_rate = 0, sec_axi, chroma_format_idc;
+		u32 src_width, src_height, frame_rate = 0, sec_axi, sec_axi_size = 0;
+		u32 chroma_format_idc;
 		dma_addr_t temp_base;
 		bool rc_enabled = p_open_param->rc_enable;
 
@@ -2476,15 +2475,12 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 			      (p_enc_info->line_buf_int_en << 6) |
 			      wave4_resolve_bs_endian_nibble());
 
-		sec_axi = 0;
-		if (inst->dev->sram_buf.size)
-			sec_axi = (p_enc_info->sec_axi_info.use_enc_rdo_enable << 11) |
-				  (p_enc_info->sec_axi_info.use_enc_lf_enable << 15);
+		sec_axi = wave5_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
 		sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 		vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI,
 			      inst->dev->sram_buf.daddr);
 		vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE,
-			      inst->dev->sram_buf.size);
+			      sec_axi ? sec_axi_size : 0);
 		vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
 
 		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
@@ -3000,27 +2996,50 @@ free_vb_fbc_y_tbl:
 	return ret;
 }
 
-static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst)
+static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
-	u32 rdo_size = 0, lf_size = 0, ret = 0;
+	struct enc_open_param *p_open_param = &p_enc_info->open_param;
+	u32 imd_size = 0, rdo_size = 0, lf_size = 0;
+	u32 ret = 0, used = 0;
 	u32 sram_size = inst->dev->sram_size;
+	u32 width = p_open_param->pic_width ?: inst->src_fmt.width;
+	u32 lf_luma = 5, lf_chroma = 3;
 
-	if (!sram_size)
+	if (sec_axi_size)
+		*sec_axi_size = 0;
+
+	if (!sram_size || !width)
 		return 0;
 
-	/*
-	 * TODO: calculate rdo_size and lf_size from inst->src_fmt.width and
-	 * inst->codec_info->enc_info.open_param.wave_param.internal_bit_depth
-	 */
+	imd_size = ALIGN(width, 32);
+	if (p_open_param->wave_param.profile == HEVC_PROFILE_MAIN10) {
+		lf_luma = 7;
+		lf_chroma = 5;
+	}
+	lf_size = ALIGN(width, 64) * (lf_luma + lf_chroma);
+	rdo_size = (ALIGN(width, 64) >> 5) * 22 * 16;
+
+	if (p_enc_info->sec_axi_info.use_ip_enable && sram_size >= imd_size) {
+		ret |= BIT(9);
+		sram_size -= imd_size;
+		used += imd_size;
+	}
+
+	if (p_enc_info->sec_axi_info.use_enc_lf_enable && sram_size >= lf_size) {
+		ret |= BIT(15);
+		sram_size -= lf_size;
+		used += lf_size;
+	}
 
 	if (p_enc_info->sec_axi_info.use_enc_rdo_enable && sram_size >= rdo_size) {
 		ret |= BIT(11);
 		sram_size -= rdo_size;
+		used += rdo_size;
 	}
 
-	if (p_enc_info->sec_axi_info.use_enc_lf_enable && sram_size >= lf_size)
-		ret |= BIT(15);
+	if (sec_axi_size)
+		*sec_axi_size = used;
 
 	return ret;
 }
@@ -3031,6 +3050,7 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 	u32 reg_val = 0;
 	u32 src_stride_c = 0;
 	u32 sec_axi = 0;
+	u32 sec_axi_size = 0;
 	dma_addr_t temp_base;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct frame_buffer *p_src_frame = option->source_frame;
@@ -3056,10 +3076,10 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 		      wave4_resolve_bs_endian_nibble());
 
 	/* Secondary AXI + scratch regions are reprogrammed for ENC_PIC on Wave4. */
-	sec_axi = wave5_vpu_enc_validate_sec_axi(inst);
+	sec_axi = wave5_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
 	sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
-	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, inst->dev->sram_buf.size);
+	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, sec_axi ? sec_axi_size : 0);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, wave4_cmd_addr(p_enc_info->vb_work.daddr));
 	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
