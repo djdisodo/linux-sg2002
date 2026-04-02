@@ -25,7 +25,7 @@ Options:
                           encode mode: raw YUV
   --mode <decode|encode>  Run mode (default: encode)
   --base-name <name>      Prefix for case directories
-  --device <node>         Video node (default: /dev/video1 in encode, /dev/video0 in decode)
+  --device <node>         Video node (default: /dev/video0 in encode, /dev/video1 in decode)
   --pixfmt <fmt>          Codec pixfmt (default: HEVC)
   --raw-pixfmt <fmt>      Raw input pixfmt in encode mode (default: YU12)
   --sizeimage <bytes>     sizeimage override for generated v4l2 command
@@ -100,9 +100,9 @@ fi
 
 if [[ -z "$REMOTE_DEVICE" ]]; then
   if [[ "$MODE" == "encode" ]]; then
-    REMOTE_DEVICE="/dev/video1"
-  else
     REMOTE_DEVICE="/dev/video0"
+  else
+    REMOTE_DEVICE="/dev/video1"
   fi
 fi
 

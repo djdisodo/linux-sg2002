@@ -10,7 +10,7 @@ Default run mode is now encoder-oriented.
 - Kernel out dir: `out-sg2002-milkv`
 - Remote log root: `/root/vpu-test`
 - Local pulled logs: `drivers/media/platform/chips-media/wave4/test-logs`
-- `w4_run_case.sh` default mode/device: `encode` on `/dev/video1`
+- `w4_run_case.sh` default mode/device: `encode` on `/dev/video0`
 
 Override using script options or environment variables:
 `TARGET_HOST`, `TARGET_MODULE`, `SSH_CMD`, `OUT_DIR`, `REMOTE_ROOT`, `LOCAL_ROOT`.
@@ -52,7 +52,7 @@ Single decode case:
 ```bash
 ./w4_run_case.sh \
   --mode decode \
-  --device /dev/video0 \
+  --device /dev/video1 \
   --name hevc-dec-baseline \
   --input /mnt/storage/sintel_272p_head4m.h265 \
   --pixfmt HEVC

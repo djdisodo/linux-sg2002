@@ -12,7 +12,7 @@ LOCAL_ROOT="${LOCAL_ROOT:-$SCRIPT_DIR/../test-logs}"
 LOCAL_MODULE="$SCRIPT_DIR/../wave4.ko"
 
 MODE="${MODE:-encode}"
-REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video1}"
+REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video0}"
 REMOTE_INPUT="${REMOTE_INPUT:-}"
 REMOTE_OUTPUT=""
 PIX_FMT="${PIX_FMT:-HEVC}"
@@ -53,7 +53,7 @@ Common options:
   --output <remote path>      Output file path on target
                               decode default: <case_dir>/out.yuv
                               encode default: <case_dir>/out.h265
-  --device <node>             Video node (default: /dev/video1)
+  --device <node>             Video node (default: /dev/video0)
   --pixfmt <fmt>              Codec queue pixfmt (default: HEVC)
   --raw-pixfmt <fmt>          Raw input pixfmt for encode mode (default: YU12)
   --width <px>                Frame width override
