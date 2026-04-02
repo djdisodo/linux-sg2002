@@ -448,10 +448,15 @@ static __maybe_unused int wave5_pm_resume(struct device *dev)
 	if (w4_forbid_runtime_pm)
 		return 0;
 
-	wave4_vpu_sleep_wake(dev, false, NULL, 0);
 	ret = clk_bulk_prepare_enable(vpu->num_clks, vpu->clks);
 	if (ret) {
 		dev_err(dev, "Enabling clocks, fail: %d\n", ret);
+		return ret;
+	}
+
+	ret = wave4_vpu_sleep_wake(dev, false, NULL, 0);
+	if (ret) {
+		clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
 		return ret;
 	}
 
