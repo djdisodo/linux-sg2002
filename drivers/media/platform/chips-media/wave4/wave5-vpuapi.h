@@ -721,6 +721,7 @@ struct enc_info {
 	u64 cur_pts; /* current timestamp in 90_k_hz */
 	u64 pts_map[32]; /* PTS mapped with source frame index */
 	s32 pending_src_idx; /* source vb2 index currently inflight in firmware (-1 when idle) */
+	int async_pm_ref_held; /* runtime-PM ref held by async device_run until finish callback */
 	bool stop_pending; /* streamoff is in progress; ignore late ENC_PIC completions */
 	u32 instance_queue_count;
 	u32 report_queue_count;

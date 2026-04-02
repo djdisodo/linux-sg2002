@@ -277,6 +277,18 @@ static void wave5_vpu_enc_complete_pending_src(struct vpu_instance *inst,
 	p_enc_info->pending_src_idx = -1;
 }
 
+static void wave5_vpu_enc_put_async_pm(struct vpu_instance *inst)
+{
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+
+	/*
+	 * Async device_run keeps one runtime-PM ref until completion callback.
+	 * Use xchg so stop_streaming and IRQ completion can safely race.
+	 */
+	if (xchg(&p_enc_info->async_pm_ref_held, 0))
+		pm_runtime_put_autosuspend(inst->dev->dev);
+}
+
 static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
@@ -295,6 +307,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 	if (p_enc_info->stop_pending || inst->state != VPU_INST_STATE_PIC_RUN ||
 	    !wave5_vpu_both_queues_are_streaming(inst)) {
 		wave5_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
+		wave5_vpu_enc_put_async_pm(inst);
 		return;
 	}
 
@@ -323,6 +336,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 			v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
 		}
 		switch_state(inst, VPU_INST_STATE_STOP);
+		wave5_vpu_enc_put_async_pm(inst);
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 		return;
 	}
@@ -386,6 +400,7 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 	} else {
 		if (!dst_buf) {
 			dev_dbg(inst->dev->dev, "No bitstream buffer.");
+			wave5_vpu_enc_put_async_pm(inst);
 			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 			return;
 		}
@@ -413,6 +428,8 @@ static void wave5_vpu_enc_finish_encode(struct vpu_instance *inst)
 
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	}
+
+	wave5_vpu_enc_put_async_pm(inst);
 }
 
 static int wave5_vpu_enc_querycap(struct file *file, void *fh, struct v4l2_capability *cap)
@@ -1495,6 +1512,7 @@ static int wave5_vpu_enc_start_streaming(struct vb2_queue *q, unsigned int count
 	int ret;
 
 	p_enc_info->stop_pending = false;
+	wave5_vpu_enc_put_async_pm(inst);
 	ret = pm_runtime_resume_and_get(inst->dev->dev);
 	if (ret < 0)
 		return ret;
@@ -1611,6 +1629,7 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 		dev_warn(inst->dev->dev,
 			 "%s: pm_runtime_resume_and_get failed: %d, forcing buffer cleanup only\n",
 			 __func__, ret);
+		wave5_vpu_enc_put_async_pm(inst);
 		if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 			streamoff_output(inst, q);
 		else
@@ -1652,6 +1671,7 @@ static void wave5_vpu_enc_stop_streaming(struct vb2_queue *q)
 	else
 		streamoff_capture(inst, q);
 
+	wave5_vpu_enc_put_async_pm(inst);
 	pm_runtime_put_autosuspend(inst->dev->dev);
 }
 
@@ -1689,6 +1709,7 @@ static void wave5_vpu_enc_device_run(void *priv)
 {
 	struct vpu_instance *inst = priv;
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	u32 fail_res = 0;
 	int ret;
 
@@ -1721,8 +1742,8 @@ static void wave5_vpu_enc_device_run(void *priv)
 			pm_runtime_put_autosuspend(inst->dev->dev);
 			return;
 		}
+		p_enc_info->async_pm_ref_held = 1;
 		dev_dbg(inst->dev->dev, "%s: leave with active job", __func__);
-		pm_runtime_put_autosuspend(inst->dev->dev);
 		return;
 	default:
 		WARN(1, "Execution of a job in state %s is invalid.\n",
@@ -1730,6 +1751,7 @@ static void wave5_vpu_enc_device_run(void *priv)
 		break;
 	}
 	dev_dbg(inst->dev->dev, "%s: leave and finish job", __func__);
+	wave5_vpu_enc_put_async_pm(inst);
 	pm_runtime_put_autosuspend(inst->dev->dev);
 	v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 }
