@@ -129,3 +129,7 @@ cat /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
 - `pmD-forbid-refcntfix-20260402-225638` (Phase D control, PM forbidden):
   - result: `ok=5 fail=0` (+1 transport NA entry from network timeout)
   - indicates async encode is stable when runtime PM is disabled
+- `pmNR-on-singleload-20260402-231826` (PM allowed, single module load, no reload between runs):
+  - result: `ok=6 fail=0`
+  - no `VIDIOC_STREAMON failed`, no `Sequence not found`
+  - strong indication that the dominant instability is in module reload/probe resident-fw re-init path, not steady-state async encode operation
