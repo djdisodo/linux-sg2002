@@ -148,3 +148,11 @@ cat /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
     - `Sequence not found: -5`
   - `runtime_status` observed as `suspended` after each iteration, confirming suspend/resume transitions are happening
   - indicates runtime PM path is still unstable under aggressive autosuspend even without module reload
+- PM fix under test: hold runtime-PM ref across async ENC job until `finish_encode` callback (release via race-safe guard in completion/streamoff paths)
+- `pmC3-auto10-singleload-pmhold-20260402-1576415209` (after async PM ref-hold patch):
+  - wrapper summary: `ok=8 fail=0`
+  - strict result: `8/8` (`v4l2.rc=0`, output size `2205`, no `Sequence not found`)
+  - same aggressive autosuspend setup (`control=auto`, `autosuspend_delay_ms=10`)
+  - strongly suggests previous autosuspend instability was caused by dropping PM ref too early in async mode
+- `pmC3b-auto10-smoke-20260402-244658322` (post-fix regression smoke):
+  - strict result: `3/3` clean outputs, no sequence errors
