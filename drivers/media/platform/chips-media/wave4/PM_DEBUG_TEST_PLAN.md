@@ -1,0 +1,131 @@
+# Wave4 Runtime PM Debug Test Plan
+
+## Goal
+Isolate whether async encode failures are caused by runtime PM suspend/resume transitions or by unrelated encode path issues.
+
+## Scope
+- Target board: `root@58.235.71.8`
+- Device: `/dev/video1`
+- Input: `/root/vpu-test/in_416x240_yu12.yuv`
+- Encoder mode under test: async (`w4_sync_enc_pic_done=0`)
+- Runtime PM module knob: `w4_forbid_runtime_pm=0` unless noted
+
+## Preconditions
+1. Build and deploy latest module:
+```bash
+cd /root/sg2002/linux-upstream/drivers/media/platform/chips-media/wave4/scripts
+./w4_build_module.sh
+```
+2. Ensure target PM sysfs path exists:
+```bash
+ssh root@58.235.71.8 'ls /sys/bus/platform/devices/b020000.video-codec/power'
+```
+3. Use one fixed ffmpeg command for all PM experiments:
+```bash
+ffmpeg -hide_banner -loglevel info -y \
+  -f rawvideo -pix_fmt yuv420p -s:v 416x240 -r 30 \
+  -i /root/vpu-test/in_416x240_yu12.yuv \
+  -frames:v 60 \
+  -c:v hevc_v4l2m2m \
+  -num_output_buffers 6 -num_capture_buffers 6 \
+  -f hevc /root/vpu-test/<case>/out.h265
+```
+
+## Phase A: PM enabled, transitions blocked
+Purpose: prove whether failures still happen when runtime PM framework is active but suspend/resume transitions are prevented.
+
+Setup:
+```bash
+ssh root@58.235.71.8 'echo on > /sys/bus/platform/devices/b020000.video-codec/power/control'
+```
+
+Run:
+- 10 async ffmpeg iterations
+- Module params: `w4_sync_enc_pic_done=0`
+
+Expected:
+- If stable: failures likely require suspend/resume transition.
+- If unstable: root cause is elsewhere (driver queueing, ffmpeg interaction, or PM refcount bug).
+
+## Phase B: PM enabled, normal autosuspend
+Purpose: baseline with regular autosuspend policy.
+
+Setup:
+```bash
+ssh root@58.235.71.8 '
+  echo auto > /sys/bus/platform/devices/b020000.video-codec/power/control
+  echo 500 > /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
+'
+```
+
+Run:
+- 10 async ffmpeg iterations
+
+Expected:
+- Compare failure rate vs Phase A.
+
+## Phase C: PM enabled, aggressive autosuspend
+Purpose: maximize transition frequency to amplify suspend/resume bugs.
+
+Setup:
+```bash
+ssh root@58.235.71.8 '
+  echo auto > /sys/bus/platform/devices/b020000.video-codec/power/control
+  echo 10 > /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
+'
+```
+
+Run:
+- 20 async ffmpeg iterations
+
+Expected:
+- Higher failure probability if resume path or PM refcount is broken.
+
+## Phase D: Control run with PM forbidden
+Purpose: verify known-good behavior for comparison.
+
+Run:
+- 5 async ffmpeg iterations
+- Module params: `w4_sync_enc_pic_done=0 w4_forbid_runtime_pm=1`
+
+Expected:
+- Should pass consistently.
+
+## Data To Capture Per Iteration
+- `v4l2.rc`
+- output size (`output_size.txt`)
+- `module_params.log`
+- `dmesg.log`
+- PM state snapshot from target:
+```bash
+cat /sys/bus/platform/devices/b020000.video-codec/power/runtime_status
+cat /sys/bus/platform/devices/b020000.video-codec/power/runtime_active_time
+cat /sys/bus/platform/devices/b020000.video-codec/power/runtime_suspended_time
+cat /sys/bus/platform/devices/b020000.video-codec/power/control
+cat /sys/bus/platform/devices/b020000.video-codec/power/autosuspend_delay_ms
+```
+
+## Pass/Fail Criteria
+- Pass: no ffmpeg `VIDIOC_STREAMON failed on capture context`, no kernel oops/warnings, non-zero output for all iterations in a phase.
+- Fail: any `VIDIOC_STREAMON` failure, zero-sized output, kernel fault/warning tied to wave4.
+
+## Priority After This Plan
+1. Run Phase A first.
+2. If Phase A passes and B/C fail, focus on runtime suspend/resume path.
+3. Patch known PM refcount bug in `wave5_vpu_enc_close()` error paths.
+4. Re-run Phase B/C to confirm improvement.
+
+## Execution Notes (2026-04-02)
+- `pmA-on-20260402-224258` (Phase A style, `control=on`, async, PM allowed):
+  - result: `ok=1 fail=9` (1 run was transport timeout/NA)
+  - dominant failure: ffmpeg `VIDIOC_STREAMON failed on capture context`
+  - representative kernel failure line: `w4 enc seq_info failed ... Sequence not found: -5`
+- `pmA2-on-refcntfix-20260402-225009` (after `enc_close` PM refcount fix):
+  - result: `ok=3 fail=7`
+  - still unstable, but improved pass rate vs previous run
+- `pmA3-on-pmguard-20260402-230239` (after guarding PM resume return in encoder paths):
+  - result: `ok=2 fail=8` (2 transport timeout/NA included in fail count)
+  - still unstable when PM is allowed
+- `pmD-forbid-refcntfix-20260402-225638` (Phase D control, PM forbidden):
+  - result: `ok=5 fail=0` (+1 transport NA entry from network timeout)
+  - indicates async encode is stable when runtime PM is disabled
