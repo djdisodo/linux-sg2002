@@ -225,7 +225,12 @@ static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
 
 static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
 {
-	return sec_axi;
+	/*
+	 * Temporary diagnostic guard:
+	 * Wave420L can stall at ENC_SET_PARAM with use=0x8800 when sec-axi
+	 * sizing is not validated per-resolution.
+	 */
+	return 0;
 }
 
 static inline u32 wave4_cmd_addr(dma_addr_t addr)
