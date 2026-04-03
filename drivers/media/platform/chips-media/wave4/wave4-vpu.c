@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
- * Wave5 series multi-standard codec IP - platform driver
+ * Wave4 series multi-standard codec IP - platform driver
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -16,10 +16,10 @@
 #include <linux/reset.h>
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
-#include "wave5-vpu.h"
-#include "wave5-regdefine.h"
-#include "wave5-vpuconfig.h"
-#include "wave5.h"
+#include "wave4-vpu.h"
+#include "wave4-regdefine.h"
+#include "wave4-vpuconfig.h"
+#include "wave4.h"
 
 #define VPU_PLATFORM_DEVICE_NAME "vdec-wave4"
 #define VPU_CLK_NAME "vcodec"
@@ -47,7 +47,7 @@
 #define W4_STD_DEF1_HEVC_ENC		BIT(16)
 #define W4_STD_DEF1_HEVC_DEC		BIT(17)
 
-struct wave5_match_data {
+struct wave4_match_data {
 	int flags;
 	const char *fw_name;
 	u32 sram_size;
@@ -102,35 +102,35 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 		}
 
 		waited_ms += slice_ms;
-		int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
-		reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
-		reason_usr = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON_USR);
+		int_sts = wave4_vdi_read_register(inst->dev, W4_VPU_VPU_INT_STS);
+		reason = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON);
+		reason_usr = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON_USR);
 		if (reason_usr || (int_sts && reason)) {
 			u32 clear_reason = reason | reason_usr;
 
-			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_REASON_CLR,
+			wave4_vdi_write_register(inst->dev, W4_VPU_VINT_REASON_CLR,
 						 clear_reason);
-			wave5_vdi_write_register(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
+			wave4_vdi_write_register(inst->dev, W4_VPU_VINT_CLEAR, 0x1);
 			return 0;
 		}
 	}
 
-	int_sts = wave5_vdi_read_register(inst->dev, W5_VPU_VPU_INT_STS);
-	reason = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON);
-	reason_usr = wave5_vdi_read_register(inst->dev, W5_VPU_VINT_REASON_USR);
+	int_sts = wave4_vdi_read_register(inst->dev, W4_VPU_VPU_INT_STS);
+	reason = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON);
+	reason_usr = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON_USR);
 	dev_warn(inst->dev->dev,
 		 "w4 wait_interrupt timeout: busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x ret_success=0x%x ret_fail=0x%x cmd=0x%x vcpu_pc=0x%x\n",
-		 wave5_vdi_read_register(inst->dev, W5_VPU_BUSY_STATUS),
+		 wave4_vdi_read_register(inst->dev, W4_VPU_BUSY_STATUS),
 		 int_sts, reason, reason_usr,
-		 wave5_vdi_read_register(inst->dev, W5_RET_SUCCESS),
-		 wave5_vdi_read_register(inst->dev, W5_RET_FAIL_REASON),
-		 wave5_vdi_read_register(inst->dev, W5_COMMAND),
-		 wave5_vdi_read_register(inst->dev, W5_VCPU_CUR_PC));
+		 wave4_vdi_read_register(inst->dev, W4_RET_SUCCESS),
+		 wave4_vdi_read_register(inst->dev, W4_RET_FAIL_REASON),
+		 wave4_vdi_read_register(inst->dev, W4_COMMAND),
+		 wave4_vdi_read_register(inst->dev, W4_VCPU_CUR_PC));
 
 	return -ETIMEDOUT;
 }
 
-static void wave5_vpu_handle_irq(void *dev_id)
+static void wave4_vpu_handle_irq(void *dev_id)
 {
 	u32 irq_reason;
 	u32 irq_reason_usr;
@@ -140,8 +140,8 @@ static void wave5_vpu_handle_irq(void *dev_id)
 	int val;
 	unsigned long flags;
 
-	irq_reason_usr = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON_USR);
-	irq_reason_hw = wave5_vdi_read_register(dev, W5_VPU_VINT_REASON);
+	irq_reason_usr = wave4_vdi_read_register(dev, W4_VPU_VINT_REASON_USR);
+	irq_reason_hw = wave4_vdi_read_register(dev, W4_VPU_VINT_REASON);
 	/*
 	 * Wave4 can signal completion bits in either VINT_REASON or
 	 * VINT_REASON_USR. Use the union so PIC_RUN completions are not lost
@@ -149,8 +149,8 @@ static void wave5_vpu_handle_irq(void *dev_id)
 	 */
 	irq_reason = irq_reason_usr | irq_reason_hw;
 	if (irq_reason)
-		wave5_vdi_write_register(dev, W5_VPU_VINT_REASON_CLR, irq_reason);
-	wave5_vdi_write_register(dev, W5_VPU_VINT_CLEAR, 0x1);
+		wave4_vdi_write_register(dev, W4_VPU_VINT_REASON_CLR, irq_reason);
+	wave4_vdi_write_register(dev, W4_VPU_VINT_CLEAR, 0x1);
 
 	spin_lock_irqsave(&dev->irq_spinlock, flags);
 	list_for_each_entry_safe(inst, tmp, &dev->instances, list) {
@@ -169,19 +169,19 @@ static void wave5_vpu_handle_irq(void *dev_id)
 		up(&dev->irq_sem);
 }
 
-static irqreturn_t wave5_vpu_irq(int irq, void *dev_id)
+static irqreturn_t wave4_vpu_irq(int irq, void *dev_id)
 {
 	struct vpu_device *dev = dev_id;
 
-	if (wave5_vdi_read_register(dev, W5_VPU_VPU_INT_STS)) {
-		wave5_vpu_handle_irq(dev);
+	if (wave4_vdi_read_register(dev, W4_VPU_VPU_INT_STS)) {
+		wave4_vpu_handle_irq(dev);
 		return IRQ_WAKE_THREAD;
 	}
 
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t wave5_vpu_irq_thread(int irq, void *dev_id)
+static irqreturn_t wave4_vpu_irq_thread(int irq, void *dev_id)
 {
 	struct vpu_device *dev = dev_id;
 	struct vpu_instance *inst, *tmp;
@@ -211,15 +211,15 @@ static irqreturn_t wave5_vpu_irq_thread(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void wave5_vpu_irq_work_fn(struct kthread_work *work)
+static void wave4_vpu_irq_work_fn(struct kthread_work *work)
 {
 	struct vpu_device *dev = container_of(work, struct vpu_device, work);
 
-	if (wave5_vdi_read_register(dev, W5_VPU_VPU_INT_STS))
-		wave5_vpu_handle_irq(dev);
+	if (wave4_vdi_read_register(dev, W4_VPU_VPU_INT_STS))
+		wave4_vpu_handle_irq(dev);
 }
 
-static enum hrtimer_restart wave5_vpu_timer_callback(struct hrtimer *timer)
+static enum hrtimer_restart wave4_vpu_timer_callback(struct hrtimer *timer)
 {
 	struct vpu_device *dev =
 			container_of(timer, struct vpu_device, hrtimer);
@@ -267,7 +267,7 @@ static int irq_thread(void *data)
 	return 0;
 }
 
-static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
+static int wave4_vpu_load_firmware(struct device *dev, const char *fw_name,
 				   u32 *revision)
 {
 	const struct firmware *fw;
@@ -334,7 +334,7 @@ static int wave5_vpu_load_firmware(struct device *dev, const char *fw_name,
 	return 0;
 }
 
-static void wave5_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
+static void wave4_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 {
 	struct regmap *syscon;
 	void __iomem *vc_ctrl;
@@ -386,7 +386,7 @@ static void wave5_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 		dev_info(&pdev->dev, "configured VC SRAM share mux to H265 path (reg=0x%x)\n", val);
 }
 
-static void wave5_vpu_configure_sg2002_dram_remap(struct platform_device *pdev)
+static void wave4_vpu_configure_sg2002_dram_remap(struct platform_device *pdev)
 {
 	struct regmap *syscon;
 	void __iomem *dram_remap;
@@ -448,7 +448,7 @@ program_direct:
 		dev_info(&pdev->dev, "enabled DRAM remap bit24 for VCODEC (reg=0x%x)\n", val);
 }
 
-static __maybe_unused int wave5_pm_suspend(struct device *dev)
+static __maybe_unused int wave4_pm_suspend(struct device *dev)
 {
 	struct vpu_device *vpu = dev_get_drvdata(dev);
 
@@ -467,7 +467,7 @@ static __maybe_unused int wave5_pm_suspend(struct device *dev)
 	return 0;
 }
 
-static __maybe_unused int wave5_pm_resume(struct device *dev)
+static __maybe_unused int wave4_pm_resume(struct device *dev)
 {
 	struct vpu_device *vpu = dev_get_drvdata(dev);
 	int ret = 0;
@@ -494,15 +494,15 @@ static __maybe_unused int wave5_pm_resume(struct device *dev)
 	return ret;
 }
 
-static const struct dev_pm_ops wave5_pm_ops = {
-	SET_RUNTIME_PM_OPS(wave5_pm_suspend, wave5_pm_resume, NULL)
+static const struct dev_pm_ops wave4_pm_ops = {
+	SET_RUNTIME_PM_OPS(wave4_pm_suspend, wave4_pm_resume, NULL)
 };
 
-static int wave5_vpu_probe(struct platform_device *pdev)
+static int wave4_vpu_probe(struct platform_device *pdev)
 {
 	int ret;
 	struct vpu_device *dev;
-	const struct wave5_match_data *match_data;
+	const struct wave4_match_data *match_data;
 	u32 fw_revision;
 
 	match_data = device_get_match_data(&pdev->dev);
@@ -577,8 +577,8 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		goto err_reset_assert;
 	}
 
-	wave5_vpu_configure_sg2002_dram_remap(pdev);
-	wave5_vpu_configure_sg2002_sram_share(pdev);
+	wave4_vpu_configure_sg2002_dram_remap(pdev);
+	wave4_vpu_configure_sg2002_sram_share(pdev);
 
 	dev->sram_size = match_data->sram_size;
 	of_property_read_u32(pdev->dev.of_node, "sram-size", &dev->sram_size);
@@ -594,7 +594,7 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		}
 	}
 
-	dev->product_code = wave5_vdi_read_register(dev, VPU_PRODUCT_CODE_REGISTER);
+	dev->product_code = wave4_vdi_read_register(dev, VPU_PRODUCT_CODE_REGISTER);
 	ret = wave4_vdi_init(&pdev->dev);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "wave4_vdi_init, fail: %d\n", ret);
@@ -616,7 +616,7 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "using polling IRQ backend\n");
 		sema_init(&dev->irq_sem, 1);
 		dev->irq_thread = kthread_run(irq_thread, dev, "irq thread");
-		hrtimer_setup(&dev->hrtimer, &wave5_vpu_timer_callback, CLOCK_MONOTONIC,
+		hrtimer_setup(&dev->hrtimer, &wave4_vpu_timer_callback, CLOCK_MONOTONIC,
 			      HRTIMER_MODE_REL_PINNED);
 		dev->worker = kthread_run_worker(0, "vpu_irq_thread");
 		if (IS_ERR(dev->worker)) {
@@ -625,7 +625,7 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 			goto err_vdi_release;
 		}
 		dev->vpu_poll_interval = vpu_poll_interval;
-		kthread_init_work(&dev->work, wave5_vpu_irq_work_fn);
+		kthread_init_work(&dev->work, wave4_vpu_irq_work_fn);
 		/*
 		 * In polling mode, keep timer alive from probe when runtime PM
 		 * callbacks are intentionally bypassed in bring-up mode.
@@ -635,17 +635,17 @@ static int wave5_vpu_probe(struct platform_device *pdev)
 				      ns_to_ktime(dev->vpu_poll_interval * NSEC_PER_MSEC),
 				      HRTIMER_MODE_REL_PINNED);
 	} else {
-		ret = devm_request_threaded_irq(&pdev->dev, dev->irq, wave5_vpu_irq,
-						wave5_vpu_irq_thread, IRQF_ONESHOT, "vpu_irq", dev);
+		ret = devm_request_threaded_irq(&pdev->dev, dev->irq, wave4_vpu_irq,
+						wave4_vpu_irq_thread, IRQF_ONESHOT, "vpu_irq", dev);
 		if (ret) {
 			dev_err(&pdev->dev, "Register interrupt handler, fail: %d\n", ret);
 			goto err_irq_release;
 		}
 	}
 
-	ret = wave5_vpu_load_firmware(&pdev->dev, match_data->fw_name, &fw_revision);
+	ret = wave4_vpu_load_firmware(&pdev->dev, match_data->fw_name, &fw_revision);
 	if (ret) {
-		dev_err(&pdev->dev, "wave5_vpu_load_firmware, fail: %d\n", ret);
+		dev_err(&pdev->dev, "wave4_vpu_load_firmware, fail: %d\n", ret);
 		goto err_irq_release;
 	}
 
@@ -743,7 +743,7 @@ err_rmem_release:
 	return ret;
 }
 
-static void wave5_vpu_remove(struct platform_device *pdev)
+static void wave4_vpu_remove(struct platform_device *pdev)
 {
 	struct vpu_device *dev = dev_get_drvdata(&pdev->dev);
 
@@ -781,7 +781,7 @@ static void wave5_vpu_remove(struct platform_device *pdev)
 	ida_destroy(&dev->inst_ida);
 }
 
-static const struct wave5_match_data sophgo_wave4_data = {
+static const struct wave4_match_data sophgo_wave4_data = {
 	/* Keep DT match flags as the userspace-visible capability contract. */
 	.flags = WAVE5_IS_ENC,
 	.fw_name = "fw_vcodec/monet.bin",
@@ -792,22 +792,22 @@ static const struct wave5_match_data sophgo_wave4_data = {
 	.std_def1_dec_mask = W4_STD_DEF1_HEVC_DEC,
 };
 
-static const struct of_device_id wave5_dt_ids[] = {
+static const struct of_device_id wave4_dt_ids[] = {
 	{ .compatible = "sophgo,sg2002-wave420l", .data = &sophgo_wave4_data },
 	{ /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, wave5_dt_ids);
+MODULE_DEVICE_TABLE(of, wave4_dt_ids);
 
-static struct platform_driver wave5_vpu_driver = {
+static struct platform_driver wave4_vpu_driver = {
 	.driver = {
 		.name = VPU_PLATFORM_DEVICE_NAME,
-		.of_match_table = of_match_ptr(wave5_dt_ids),
-		.pm = &wave5_pm_ops,
+		.of_match_table = of_match_ptr(wave4_dt_ids),
+		.pm = &wave4_pm_ops,
 		},
-	.probe = wave5_vpu_probe,
-	.remove = wave5_vpu_remove,
+	.probe = wave4_vpu_probe,
+	.remove = wave4_vpu_remove,
 };
 
-module_platform_driver(wave5_vpu_driver);
+module_platform_driver(wave4_vpu_driver);
 MODULE_DESCRIPTION("chips&media Wave4 VPU V4L2 driver");
 MODULE_LICENSE("Dual BSD/GPL");

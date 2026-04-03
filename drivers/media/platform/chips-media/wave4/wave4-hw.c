@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
- * Wave5 series multi-standard codec IP - wave5 backend logic
+ * Wave4 series multi-standard codec IP - wave4 backend logic
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -11,9 +11,9 @@
 #include <linux/ktime.h>
 #include <linux/moduleparam.h>
 #include <linux/reset.h>
-#include "wave5-vpu.h"
-#include "wave5.h"
-#include "wave5-regdefine.h"
+#include "wave4-vpu.h"
+#include "wave4.h"
+#include "wave4-regdefine.h"
 
 #define FIO_TIMEOUT			10000000
 #define FIO_CTRL_READY			BIT(31)
@@ -46,166 +46,17 @@
 #define W521_FEATURE_VCORE_BACKBONE	BIT(22)
 #define W521_FEATURE_VCPU_BACKBONE	BIT(28)
 
-#define REMAP_CTRL_MAX_SIZE_BITS	((W5_REMAP_MAX_SIZE >> 12) & 0x1ff)
+#define REMAP_CTRL_MAX_SIZE_BITS	((W4_REMAP_MAX_SIZE >> 12) & 0x1ff)
 #define REMAP_CTRL_REGISTER_VALUE(index)	(			\
 	(BIT(31) | ((index) << 12) | BIT(11) | REMAP_CTRL_MAX_SIZE_BITS)\
 )
 
 #define FASTIO_ADDRESS_MASK		GENMASK(15, 0)
 #define SEQ_PARAM_PROFILE_MASK		GENMASK(30, 24)
-/* Wave420L uses the legacy Wave4 command window layout. */
-#define W4_CORE_INDEX		(W5_REG_BASE + 0x0104)
-#define W4_INST_INDEX		(W5_REG_BASE + 0x0108)
-#define W4_COMMAND_OPTION		(W5_REG_BASE + 0x010C)
-#define W4_RET_SUCCESS		(W5_REG_BASE + 0x0110)
-#define W4_RET_FAIL_REASON	(W5_REG_BASE + 0x0114)
-#define W4_ADDR_WORK_BASE		(W5_REG_BASE + 0x0138)
-#define W4_WORK_SIZE		(W5_REG_BASE + 0x013C)
-#define W4_WORK_PARAM		(W5_REG_BASE + 0x0140)
-#define W4_ADDR_TEMP_BASE		(W5_REG_BASE + 0x0144)
-#define W4_TEMP_SIZE		(W5_REG_BASE + 0x0148)
-#define W4_TEMP_PARAM		(W5_REG_BASE + 0x014C)
-#define W4_ADDR_SEC_AXI		(W5_REG_BASE + 0x0150)
-#define W4_SEC_AXI_SIZE		(W5_REG_BASE + 0x0154)
-#define W4_USE_SEC_AXI		(W5_REG_BASE + 0x0158)
-#define W4_ADDR_CODE_BASE		(W5_REG_BASE + 0x0118)
-#define W4_CODE_SIZE		(W5_REG_BASE + 0x011C)
-#define W4_CODE_PARAM		(W5_REG_BASE + 0x0120)
-#define W4_HW_OPTION		(W5_REG_BASE + 0x0124)
-#define W4_TIMEOUT_CNT		(W5_REG_BASE + 0x0134)
-#define W4_RET_FW_VERSION		(W5_REG_BASE + 0x0118)
-#define W4_BS_START_ADDR		(W5_REG_BASE + 0x0120)
-#define W4_BS_SIZE		(W5_REG_BASE + 0x0124)
-#define W4_BS_PARAM		(W5_REG_BASE + 0x0128)
-#define W4_BS_OPTION		(W5_REG_BASE + 0x012C)
-#define W4_BS_RD_PTR		(W5_REG_BASE + 0x0130)
-#define W4_BS_WR_PTR		(W5_REG_BASE + 0x0134)
-
-#define W4_CMD_ENC_SET_PARAM_ENABLE	(W5_REG_BASE + 0x015C)
-#define W4_CMD_ENC_SEQ_SRC_SIZE		(W5_REG_BASE + 0x0160)
-#define W4_CMD_ENC_SEQ_PIC_PARAM		(W5_REG_BASE + 0x016C)
-#define W4_CMD_ENC_SEQ_GOP_PARAM		(W5_REG_BASE + 0x0170)
-#define W4_CMD_ENC_SEQ_INTRA_PARAM	(W5_REG_BASE + 0x0174)
-#define W4_CMD_ENC_SEQ_CONF_WIN_TOP_BOT	(W5_REG_BASE + 0x0178)
-#define W4_CMD_ENC_SEQ_CONF_WIN_LEFT_RIGHT	(W5_REG_BASE + 0x017C)
-#define W4_CMD_ENC_SEQ_FRAME_RATE		(W5_REG_BASE + 0x0180)
-#define W4_CMD_ENC_SEQ_INDEPENDENT_SLICE	(W5_REG_BASE + 0x0184)
-#define W4_CMD_ENC_SEQ_DEPENDENT_SLICE	(W5_REG_BASE + 0x0188)
-#define W4_CMD_ENC_SEQ_INTRA_REFRESH	(W5_REG_BASE + 0x018C)
-#define W4_CMD_ENC_PARAM			(W5_REG_BASE + 0x0190)
-#define W4_CMD_ENC_SEQ_LAYER_PERIOD	(W5_REG_BASE + 0x0194)
-#define W4_CMD_ENC_RC_PARAM		(W5_REG_BASE + 0x0198)
-#define W4_CMD_ENC_RC_MIN_MAX_QP		(W5_REG_BASE + 0x019C)
-#define W4_CMD_ENC_RC_BIT_RATIO_LAYER_0_3	(W5_REG_BASE + 0x01A0)
-#define W4_CMD_ENC_RC_BIT_RATIO_LAYER_4_7	(W5_REG_BASE + 0x01A4)
-#define W4_CMD_ENC_NR_PARAM		(W5_REG_BASE + 0x01A8)
-#define W4_CMD_ENC_NR_WEIGHT		(W5_REG_BASE + 0x01AC)
-#define W4_CMD_ENC_NUM_UNITS_IN_TICK	(W5_REG_BASE + 0x01B0)
-#define W4_CMD_ENC_TIME_SCALE		(W5_REG_BASE + 0x01B4)
-#define W4_CMD_ENC_NUM_TICKS_POC_DIFF_ONE	(W5_REG_BASE + 0x01B8)
-#define W4_CMD_ENC_RC_TRANS_RATE		(W5_REG_BASE + 0x01BC)
-#define W4_CMD_ENC_RC_TARGET_RATE		(W5_REG_BASE + 0x01C0)
-#define W4_CMD_ENC_ROT_PARAM		(W5_REG_BASE + 0x01C4)
-/* Encoder ENC_PIC (shares the same window as SET_PARAM). */
-#define W4_CMD_ENC_ADDR_REPORT_BASE	(W5_REG_BASE + 0x015C)
-#define W4_CMD_ENC_REPORT_SIZE		(W5_REG_BASE + 0x0160)
-#define W4_CMD_ENC_REPORT_PARAM		(W5_REG_BASE + 0x0164)
-#define W4_CMD_ENC_CODE_OPTION		(W5_REG_BASE + 0x0168)
-#define W4_CMD_ENC_PIC_PARAM		(W5_REG_BASE + 0x016C)
-#define W4_CMD_ENC_SRC_PIC_IDX		(W5_REG_BASE + 0x0170)
-#define W4_CMD_ENC_SRC_ADDR_Y		(W5_REG_BASE + 0x0174)
-#define W4_CMD_ENC_SRC_ADDR_U		(W5_REG_BASE + 0x0178)
-#define W4_CMD_ENC_SRC_ADDR_V		(W5_REG_BASE + 0x017C)
-#define W4_CMD_ENC_SRC_STRIDE		(W5_REG_BASE + 0x0180)
-#define W4_CMD_ENC_SRC_FORMAT		(W5_REG_BASE + 0x0184)
-#define W4_CMD_ENC_PREFIX_SEI_NAL_ADDR	(W5_REG_BASE + 0x0188)
-#define W4_CMD_ENC_PREFIX_SEI_INFO	(W5_REG_BASE + 0x018C)
-#define W4_CMD_ENC_SUFFIX_SEI_NAL_ADDR	(W5_REG_BASE + 0x0190)
-#define W4_CMD_ENC_SUFFIX_SEI_INFO	(W5_REG_BASE + 0x0194)
-#define W4_CMD_ENC_LONGTERM_PIC		(W5_REG_BASE + 0x0198)
-#define W4_CMD_ENC_SUB_FRAME_SYNC_CONFIG	(W5_REG_BASE + 0x019C)
-#define W4_CMD_ENC_CTU_OPT_PARAM	(W5_REG_BASE + 0x01A0)
-#define W4_CMD_ENC_ROI_ADDR_CTU_MAP	(W5_REG_BASE + 0x01A4)
-#define W4_CMD_ENC_CTU_MODE_MAP_ADDR	(W5_REG_BASE + 0x01A8)
-#define W4_CMD_ENC_CTU_QP_MAP_ADDR	(W5_REG_BASE + 0x01AC)
-#define W4_CMD_ENC_SRC_TIMESTAMP_LOW	(W5_REG_BASE + 0x01B0)
-#define W4_CMD_ENC_SRC_TIMESTAMP_HIGH	(W5_REG_BASE + 0x01B4)
-/* SET_FRAMEBUF register window (Wave4 layout). */
-#define W4_SFB_OPTION			(W5_REG_BASE + 0x010C)
-#define W4_COMMON_PIC_INFO		(W5_REG_BASE + 0x0120)
-#define W4_PIC_SIZE			(W5_REG_BASE + 0x0124)
-#define W4_SET_FB_NUM			(W5_REG_BASE + 0x0128)
-#define W4_ADDR_LUMA_BASE0		(W5_REG_BASE + 0x0160)
-#define W4_ADDR_CB_BASE0		(W5_REG_BASE + 0x0164)
-#define W4_ADDR_CR_BASE0		(W5_REG_BASE + 0x0168)
-#define W4_ADDR_FBC_Y_OFFSET0		(W5_REG_BASE + 0x0168)
-#define W4_ADDR_FBC_C_OFFSET0		(W5_REG_BASE + 0x016C)
-#define W4_FBC_STRIDE			(W5_REG_BASE + 0x0154)
-#define W4_ADDR_SUB_SAMPLED_FB_BASE	(W5_REG_BASE + 0x0158)
-#define W4_SUB_SAMPLED_ONE_FB_SIZE	(W5_REG_BASE + 0x015C)
-#define W4_ADDR_MV_COL0			(W5_REG_BASE + 0x01E0)
-#define W4_CMD_DEC_ADDR_REPORT_BASE	(W5_REG_BASE + 0x015C)
-#define W4_CMD_DEC_REPORT_SIZE		(W5_REG_BASE + 0x0160)
-#define W4_CMD_DEC_REPORT_PARAM		(W5_REG_BASE + 0x0164)
-#define W4_CMD_DEC_ADDR_USER_BASE	(W5_REG_BASE + 0x0168)
-#define W4_CMD_DEC_USER_SIZE		(W5_REG_BASE + 0x016C)
-#define W4_CMD_DEC_USER_PARAM		(W5_REG_BASE + 0x0170)
-#define W4_CMD_DEC_USER_MASK		(W5_REG_BASE + 0x0174)
-#define W4_CMD_DEC_SEVERITY_LEVEL	(W5_REG_BASE + 0x0178)
-#define W4_CMD_DEC_VCORE_LIMIT		(W5_REG_BASE + 0x017C)
-#define W4_CMD_DEC_TEMPORAL_ID_PLUS1	(W5_REG_BASE + 0x018C)
-#define W4_CMD_DEC_FORCE_FB_LATENCY_PLUS1	(W5_REG_BASE + 0x0188)
-#define W4_CMD_DEC_DISP_FLAG		(W5_REG_BASE + 0x0190)
-#define W4_CMD_SEQ_CHANGE_ENABLE_FLAG	(W5_REG_BASE + 0x0194)
-#define W4_RET_DEC_DISP_FLAG		(W5_REG_BASE + 0x0190)
-#define W4_RET_DEC_SEQ_PARAM		(W5_REG_BASE + 0x0198)
-#define W4_RET_DEC_COLOR_SAMPLE_INFO	(W5_REG_BASE + 0x01A0)
-#define W4_RET_DEC_CROP_TOP_BOTTOM	(W5_REG_BASE + 0x01B4)
-#define W4_RET_DEC_CROP_LEFT_RIGHT	(W5_REG_BASE + 0x01B8)
-#define W4_RET_DEC_PIC_SIZE		(W5_REG_BASE + 0x01BC)
-#define W4_RET_DEC_FRAMEBUF_NEEDED	(W5_REG_BASE + 0x01C0)
-#define W4_RET_DEC_SEQ_CHANGE_FLAG	(W5_REG_BASE + 0x01C4)
-#define W4_RET_TEMP_SUB_LAYER_INFO	(W5_REG_BASE + 0x01D0)
-#define W4_RET_FRAME_CYCLE		(W5_REG_BASE + 0x01D4)
-#define W4_RET_DEC_WARN_INFO		(W5_REG_BASE + 0x01D8)
-#define W4_RET_DEC_DECODED_INDEX	(W5_REG_BASE + 0x01E0)
-#define W4_RET_DEC_DISPLAY_INDEX	(W5_REG_BASE + 0x01E4)
-#define W4_RET_DEC_PIC_TYPE		(W5_REG_BASE + 0x01E8)
-#define W4_RET_DEC_PIC_POC		(W5_REG_BASE + 0x01EC)
-#define W4_RET_DEC_ERR_INFO		(W5_REG_BASE + 0x01F4)
-
-#define W4_RET_ENC_MIN_FB_NUM		(W5_REG_BASE + 0x01CC)
-#define W4_RET_ENC_MIN_SRC_BUF_NUM	(W5_REG_BASE + 0x01D8)
-#define W4_RET_ENC_PIC_IDX		(W5_REG_BASE + 0x01A8)
-#define W4_RET_ENC_PIC_BYTE		(W5_REG_BASE + 0x01C8)
-#define W4_RET_ENC_USED_SRC_IDX		(W5_REG_BASE + 0x01D8)
-#define W4_RET_ENC_PIC_TYPE		(W5_REG_BASE + 0x01E0)
-#define W4_RET_ENC_VCL_NUT		(W5_REG_BASE + 0x01E4)
-#define W4_ENC_SET_PARAM_ENABLE_ALL	0xffffffff
-#define W4_BS_PARAM_ENABLE_RINGBUFFER	BIT(9)
-#define W4_USER_DATA_ENDIAN_LITTLE	0x0
-#define W4_REPORT_ENDIAN_LE_WORD_BYTE_SWAP	0x3
-/* Wave4 command IDs. */
-#define W4_CMD_INIT_VPU		0x0001
-#define W4_CMD_DEC_PIC_HDR_SET_PARAM	0x0002
-#define W4_CMD_FINI_SEQ		0x0004
-#define W4_CMD_DEC_ENC_PIC		0x0008
-#define W4_CMD_SET_FB		0x0010
-#define W4_CMD_FLUSH_DECODER		0x0020
-#define W4_CMD_GET_FW_VERSION	0x0100
-#define W4_CMD_QUERY_DECODER		0x0200
-#define W4_CMD_SLEEP_VPU		0x0400
-#define W4_CMD_WAKEUP_VPU		0x0800
-#define W4_CMD_CREATE_INSTANCE	0x4000
-#define W4_RESET_ALL_BLOCKS		0x07ffffff
-#define W4_CODEC_MODE_HEVC_DEC	0x00
-#define W4_CODEC_MODE_HEVC_ENC	0x01
-#define W4_CODEC_MODE_AVC_DEC	0x10
-#define W4_CODEC_MODE_AVC_ENC	0x88
-
-static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
+/* Wave420L register definitions are centralized in wave4-regdefine.h. */
+static void _wave4_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
 				 const char *func);
-#define PRINT_REG_ERR(dev, reason)	_wave5_print_reg_err((dev), (reason), __func__)
+#define PRINT_REG_ERR(dev, reason)	_wave4_print_reg_err((dev), (reason), __func__)
 
 static int wave4_allow_resident_fw_fallback = 1;
 module_param_named(w4_allow_resident_fw_fallback, wave4_allow_resident_fw_fallback, int, 0644);
@@ -246,86 +97,86 @@ static u32 wave4_bs_ptr_reg_value(dma_addr_t ptr)
 static u32 wave4_translate_command(u32 cmd)
 {
 	switch (cmd) {
-	case W5_INIT_VPU:
+	case W4_INIT_VPU:
 		return W4_CMD_INIT_VPU;
-	case W5_WAKEUP_VPU:
+	case W4_WAKEUP_VPU:
 		/*
 		 * Wave420L BSP wake restore re-enters firmware through INIT_VPU
 		 * (after remap/reset programming) instead of WAKEUP_VPU.
 		 */
 		return W4_CMD_INIT_VPU;
-	case W5_SLEEP_VPU:
+	case W4_SLEEP_VPU:
 		return W4_CMD_SLEEP_VPU;
-	case W5_CREATE_INSTANCE:
+	case W4_CREATE_INSTANCE:
 		return W4_CMD_CREATE_INSTANCE;
-	case W5_FLUSH_INSTANCE:
+	case W4_FLUSH_INSTANCE:
 		return W4_CMD_FLUSH_DECODER;
-	case W5_DESTROY_INSTANCE:
+	case W4_DESTROY_INSTANCE:
 		return W4_CMD_FINI_SEQ;
-	case W5_INIT_SEQ:
+	case W4_INIT_SEQ:
 		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
-	case W5_SET_FB:
+	case W4_SET_FB:
 		return W4_CMD_SET_FB;
-	case W5_DEC_ENC_PIC:
+	case W4_DEC_ENC_PIC:
 		return W4_CMD_DEC_ENC_PIC;
-	case W5_ENC_SET_PARAM:
+	case W4_ENC_SET_PARAM:
 		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
-	case W5_QUERY:
+	case W4_QUERY:
 		return W4_CMD_QUERY_DECODER;
 	default:
 		return cmd;
 	}
 }
 
-static inline u32 wave5_hw_command(struct vpu_device *vpu_dev, u32 cmd)
+static inline u32 wave4_hw_command(struct vpu_device *vpu_dev, u32 cmd)
 {
 	(void)vpu_dev;
 	return wave4_translate_command(cmd);
 }
 
-static inline u32 wave5_dec_bs_rd_ptr_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_bs_rd_ptr_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_BS_RD_PTR;
 }
 
-static inline u32 wave5_dec_bs_wr_ptr_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_bs_wr_ptr_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_BS_WR_PTR;
 }
 
-static inline u32 wave5_dec_bs_option_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_bs_option_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_BS_OPTION;
 }
 
-static inline u32 wave5_dec_cmd_option_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_cmd_option_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_COMMAND_OPTION;
 }
 
-static inline u32 wave5_dec_user_mask_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_user_mask_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_CMD_DEC_USER_MASK;
 }
 
-static inline u32 wave5_dec_temp_id_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_temp_id_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_CMD_DEC_TEMPORAL_ID_PLUS1;
 }
 
-static inline u32 wave5_dec_force_fb_latency_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_force_fb_latency_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_CMD_DEC_FORCE_FB_LATENCY_PLUS1;
 }
 
-static inline u32 wave5_dec_seq_change_reg(struct vpu_device *vpu_dev)
+static inline u32 wave4_dec_seq_change_reg(struct vpu_device *vpu_dev)
 {
 	(void)vpu_dev;
 	return W4_CMD_SEQ_CHANGE_ENABLE_FLAG;
@@ -334,34 +185,34 @@ static inline u32 wave5_dec_seq_change_reg(struct vpu_device *vpu_dev)
 static inline const char *cmd_to_str(int cmd, bool is_dec)
 {
 	switch (cmd) {
-	case W5_INIT_VPU:
-		return "W5_INIT_VPU";
-	case W5_WAKEUP_VPU:
-		return "W5_WAKEUP_VPU";
-	case W5_SLEEP_VPU:
-		return "W5_SLEEP_VPU";
-	case W5_CREATE_INSTANCE:
-		return "W5_CREATE_INSTANCE";
-	case W5_FLUSH_INSTANCE:
-		return "W5_FLUSH_INSTANCE";
-	case W5_DESTROY_INSTANCE:
-		return "W5_DESTROY_INSTANCE";
-	case W5_INIT_SEQ:
-		return "W5_INIT_SEQ";
-	case W5_SET_FB:
-		return "W5_SET_FB";
-	case W5_DEC_ENC_PIC:
+	case W4_INIT_VPU:
+		return "W4_INIT_VPU";
+	case W4_WAKEUP_VPU:
+		return "W4_WAKEUP_VPU";
+	case W4_SLEEP_VPU:
+		return "W4_SLEEP_VPU";
+	case W4_CREATE_INSTANCE:
+		return "W4_CREATE_INSTANCE";
+	case W4_FLUSH_INSTANCE:
+		return "W4_FLUSH_INSTANCE";
+	case W4_DESTROY_INSTANCE:
+		return "W4_DESTROY_INSTANCE";
+	case W4_INIT_SEQ:
+		return "W4_INIT_SEQ";
+	case W4_SET_FB:
+		return "W4_SET_FB";
+	case W4_DEC_ENC_PIC:
 		if (is_dec)
-			return "W5_DEC_PIC";
-		return "W5_ENC_PIC";
-	case W5_ENC_SET_PARAM:
-		return "W5_ENC_SET_PARAM";
-	case W5_QUERY:
-		return "W5_QUERY";
-	case W5_UPDATE_BS:
-		return "W5_UPDATE_BS";
-	case W5_MAX_VPU_COMD:
-		return "W5_MAX_VPU_COMD";
+			return "W4_DEC_PIC";
+		return "W4_ENC_PIC";
+	case W4_ENC_SET_PARAM:
+		return "W4_ENC_SET_PARAM";
+	case W4_QUERY:
+		return "W4_QUERY";
+	case W4_UPDATE_BS:
+		return "W4_UPDATE_BS";
+	case W4_MAX_VPU_COMD:
+		return "W4_MAX_VPU_COMD";
 	default:
 		return "UNKNOWN";
 	}
@@ -383,7 +234,7 @@ static u32 wave4_codec_mode(enum wave_std std)
 	}
 }
 
-static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
+static void _wave4_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason,
 				 const char *func)
 {
 	struct device *dev = vpu_dev->dev;
@@ -395,7 +246,7 @@ static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 			dev_warn(dev, "%s: codec error class: 0x%x\n", func, reg_fail_reason);
 			break;
 		}
-		reg_val = vpu_read_reg(vpu_dev, W5_RET_QUEUE_FAIL_REASON);
+		reg_val = vpu_read_reg(vpu_dev, W4_RET_QUEUE_FAIL_REASON);
 		dev_warn(dev, "%s: queueing failure detail: 0x%x\n", func, reg_val);
 		break;
 	case WAVE5_SYSERR_RESULT_NOT_READY:
@@ -429,7 +280,7 @@ static void _wave5_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 	}
 }
 
-static int wave5_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
+static int wave4_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
 {
 	u32 ctrl;
 	ktime_t deadline;
@@ -442,14 +293,14 @@ static int wave5_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
 	deadline = ktime_add_us(ktime_get(), FIO_TIMEOUT);
 	do {
 		ctrl = addr & 0xffff;
-		wave5_vdi_write_register(vpu_dev, W5_VPU_FIO_CTRL_ADDR, ctrl);
-		ret = read_poll_timeout(wave5_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY,
+		wave4_vdi_write_register(vpu_dev, W4_VPU_FIO_CTRL_ADDR, ctrl);
+		ret = read_poll_timeout(wave4_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY,
 					0, FIO_TIMEOUT, false, vpu_dev,
-					W5_VPU_FIO_CTRL_ADDR);
+					W4_VPU_FIO_CTRL_ADDR);
 		if (ret)
 			return ret;
 
-		if (wave5_vdi_read_register(vpu_dev, W5_VPU_FIO_DATA) == val)
+		if (wave4_vdi_read_register(vpu_dev, W4_VPU_FIO_DATA) == val)
 			return 0;
 		cpu_relax();
 	} while (ktime_before(ktime_get(), deadline));
@@ -457,41 +308,44 @@ static int wave5_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
 	return -ETIMEDOUT;
 }
 
-static u32 wave5_fio_readl(struct vpu_device *vpu_dev, unsigned int addr)
+static u32 wave4_fio_readl(struct vpu_device *vpu_dev, unsigned int addr)
 {
 	unsigned int ctrl;
 	int ret;
 
 	ctrl = FIELD_GET(FASTIO_ADDRESS_MASK, addr);
-	wave5_vdi_write_register(vpu_dev, W5_VPU_FIO_CTRL_ADDR, ctrl);
-	ret = read_poll_timeout(wave5_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
-				FIO_TIMEOUT, false, vpu_dev, W5_VPU_FIO_CTRL_ADDR);
+	wave4_vdi_write_register(vpu_dev, W4_VPU_FIO_CTRL_ADDR, ctrl);
+	ret = read_poll_timeout(wave4_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
+				FIO_TIMEOUT, false, vpu_dev, W4_VPU_FIO_CTRL_ADDR);
 	if (ret) {
 		dev_warn_ratelimited(vpu_dev->dev, "FIO read timeout: addr=0x%x\n", addr);
 		return 0;
 	}
 
-	return wave5_vdi_read_register(vpu_dev, W5_VPU_FIO_DATA);
+	return wave4_vdi_read_register(vpu_dev, W4_VPU_FIO_DATA);
 }
 
-static void wave5_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsigned int data)
+static void wave4_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsigned int data)
 {
 	int ret;
 	unsigned int ctrl;
 
-	wave5_vdi_write_register(vpu_dev, W5_VPU_FIO_DATA, data);
+	wave4_vdi_write_register(vpu_dev, W4_VPU_FIO_DATA, data);
 	ctrl = FIELD_GET(FASTIO_ADDRESS_MASK, addr);
 	ctrl |= FIO_CTRL_WRITE;
-	wave5_vdi_write_register(vpu_dev, W5_VPU_FIO_CTRL_ADDR, ctrl);
-	ret = read_poll_timeout(wave5_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
-				FIO_TIMEOUT, false, vpu_dev, W5_VPU_FIO_CTRL_ADDR);
+	wave4_vdi_write_register(vpu_dev, W4_VPU_FIO_CTRL_ADDR, ctrl);
+	ret = read_poll_timeout(wave4_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
+				FIO_TIMEOUT, false, vpu_dev, W4_VPU_FIO_CTRL_ADDR);
 	if (ret)
 		dev_dbg_ratelimited(vpu_dev->dev, "FIO write timeout: addr=0x%x data=%x\n",
 				    ctrl, data);
 }
 
+#undef W4_DBG_INFO_CTRL_ADDR
 #define W4_DBG_INFO_CTRL_ADDR	0x8074
+#undef W4_DBG_INFO_DATA_ADDR
 #define W4_DBG_INFO_DATA_ADDR	0x8078
+#undef W4_DBG_INFO_READY_ADDR
 #define W4_DBG_INFO_READY_ADDR	0x807c
 
 struct wave4_dbg_probe {
@@ -504,13 +358,13 @@ static bool wave4_read_dbg_probe(struct vpu_device *vpu_dev, u16 idx, u32 *value
 	u32 ready;
 	int ret;
 
-	wave5_fio_writel(vpu_dev, W4_DBG_INFO_CTRL_ADDR, BIT(20) | BIT(16) | idx);
-	ret = read_poll_timeout(wave5_fio_readl, ready, ready & BIT(0), 0, FIO_TIMEOUT,
+	wave4_fio_writel(vpu_dev, W4_DBG_INFO_CTRL_ADDR, BIT(20) | BIT(16) | idx);
+	ret = read_poll_timeout(wave4_fio_readl, ready, ready & BIT(0), 0, FIO_TIMEOUT,
 				false, vpu_dev, W4_DBG_INFO_READY_ADDR);
 	if (ret)
 		return false;
 
-	*value = wave5_fio_readl(vpu_dev, W4_DBG_INFO_DATA_ADDR);
+	*value = wave4_fio_readl(vpu_dev, W4_DBG_INFO_DATA_ADDR);
 	return true;
 }
 
@@ -554,22 +408,22 @@ static void wave4_dump_dbg_probes(struct vpu_instance *inst)
 	}
 }
 
-static int wave5_wait_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
+static int wave4_wait_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
 {
-	return wave5_wait_fio_readl(vpu_dev, addr, 0);
+	return wave4_wait_fio_readl(vpu_dev, addr, 0);
 }
 
-static int wave5_wait_vpu_busy(struct vpu_device *vpu_dev, unsigned int addr)
+static int wave4_wait_vpu_busy(struct vpu_device *vpu_dev, unsigned int addr)
 {
 	u32 data;
 
-	return read_poll_timeout(wave5_vdi_read_register, data, data == 0,
+	return read_poll_timeout(wave4_vdi_read_register, data, data == 0,
 				 0, VPU_BUSY_CHECK_TIMEOUT, false, vpu_dev, addr);
 }
 
-static int wave5_wait_vcpu_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
+static int wave4_wait_vcpu_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
 {
-	return wave5_wait_fio_readl(vpu_dev, addr, 0);
+	return wave4_wait_fio_readl(vpu_dev, addr, 0);
 }
 
 bool wave4_vpu_is_init(struct vpu_device *vpu_dev)
@@ -579,12 +433,12 @@ bool wave4_vpu_is_init(struct vpu_device *vpu_dev)
 	 * despite firmware being resident/running. Keep a software latch set
 	 * once init/re-init succeeds (or resident firmware is accepted).
 	 */
-	return vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC) != 0 || vpu_dev->fw_running;
+	return vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC) != 0 || vpu_dev->fw_running;
 }
 
 unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev)
 {
-	u32 val = vpu_read_reg(vpu_dev, W5_PRODUCT_NUMBER);
+	u32 val = vpu_read_reg(vpu_dev, W4_PRODUCT_NUMBER);
 
 	if (val == W4_PRODUCT_CODE)
 		return PRODUCT_ID_W4;
@@ -594,25 +448,25 @@ unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev)
 	return PRODUCT_ID_NONE;
 }
 
-static void wave5_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_instance *inst, u32 cmd)
+static void wave4_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_instance *inst, u32 cmd)
 {
 	u32 instance_index = 0;
 	u32 codec_mode = 0;
-	u32 hw_cmd = wave5_hw_command(vpu_dev, cmd);
+	u32 hw_cmd = wave4_hw_command(vpu_dev, cmd);
 
 	if (inst) {
 		instance_index = inst->id;
 		codec_mode = wave4_codec_mode(inst->std);
 	}
 
-	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
+	vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
 	vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
 	vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
 	vpu_write_reg(vpu_dev, W4_INST_INDEX,
 		      (instance_index & 0xffff) |
 		      (codec_mode << 16));
 
-	vpu_write_reg(vpu_dev, W5_COMMAND, hw_cmd);
+	vpu_write_reg(vpu_dev, W4_COMMAND, hw_cmd);
 
 	if (inst) {
 		dev_dbg(vpu_dev->dev,
@@ -624,11 +478,11 @@ static void wave5_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_insta
 	}
 
 	if (hw_cmd != W4_CMD_INIT_VPU) {
-		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+		vpu_write_reg(vpu_dev, W4_VPU_HOST_INT_REQ, 1);
 	}
 }
 
-static int wave5_vpu_firmware_command_queue_error_check(struct vpu_device *dev, u32 *fail_res)
+static int wave4_vpu_firmware_command_queue_error_check(struct vpu_device *dev, u32 *fail_res)
 {
 	u32 reason = 0;
 
@@ -646,21 +500,21 @@ static int wave5_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 				*fail_res = reason;
 			dev_dbg(dev->dev,
 				"%s: ignoring W4 queue reason=0x%x for cmd=0x%x\n",
-				__func__, reason, vpu_read_reg(dev, W5_COMMAND));
+				__func__, reason, vpu_read_reg(dev, W4_COMMAND));
 			return 0;
 		}
 
 		dev_warn(dev->dev,
 			 "%s: queue check failed: reason=0x%x cmd=0x%x inst=0x%x cmd_opt=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
 			 __func__, reason,
-			 vpu_read_reg(dev, W5_COMMAND),
+			 vpu_read_reg(dev, W4_COMMAND),
 			 vpu_read_reg(dev, W4_INST_INDEX),
 			 vpu_read_reg(dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(dev, W5_VPU_BUSY_STATUS),
-			 vpu_read_reg(dev, W5_VPU_VPU_INT_STS),
-			 vpu_read_reg(dev, W5_VPU_VINT_REASON),
-			 vpu_read_reg(dev, W5_VPU_VINT_REASON_USR),
-			 vpu_read_reg(dev, W5_VCPU_CUR_PC));
+			 vpu_read_reg(dev, W4_VPU_BUSY_STATUS),
+			 vpu_read_reg(dev, W4_VPU_VPU_INT_STS),
+			 vpu_read_reg(dev, W4_VPU_VINT_REASON),
+			 vpu_read_reg(dev, W4_VPU_VINT_REASON_USR),
+			 vpu_read_reg(dev, W4_VCPU_CUR_PC));
 		PRINT_REG_ERR(dev, reason);
 
 		if (fail_res)
@@ -680,9 +534,9 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 {
 	ktime_t start;
 	int ret;
-	u32 int_sts = vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS);
-	u32 reason = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
-	u32 reason_usr = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR);
+	u32 int_sts = vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS);
+	u32 reason = vpu_read_reg(inst->dev, W4_VPU_VINT_REASON);
+	u32 reason_usr = vpu_read_reg(inst->dev, W4_VPU_VINT_REASON_USR);
 
 	/*
 	 * Wave4 can leave VINT_REASON_USR latched even when INT_STS is 0.
@@ -692,11 +546,11 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 		u32 clear_reason = reason | reason_usr;
 
 		if (clear_reason)
-			vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, clear_reason);
-		vpu_write_reg(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
+			vpu_write_reg(inst->dev, W4_VPU_VINT_REASON_CLR, clear_reason);
+		vpu_write_reg(inst->dev, W4_VPU_VINT_CLEAR, 0x1);
 	}
 
-	wave5_bit_issue_command(inst->dev, inst, cmd);
+	wave4_bit_issue_command(inst->dev, inst, cmd);
 
 	/*
 	 * SET_PARAM is interrupt-driven in Wave4 BSP, but our IRQ handler can
@@ -706,26 +560,26 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 	 * stale interrupt reasons can be observed while the command is still
 	 * running. Completion is defined by BUSY deassertion.
 	 */
-	if (cmd == W5_ENC_SET_PARAM) {
+	if (cmd == W4_ENC_SET_PARAM) {
 		bool saw_irq_reason = false;
 
 		start = ktime_get();
 		for (;;) {
 			u32 busy_now;
-			u32 int_sts_now = vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS);
-			u32 reason_now = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON);
-			u32 reason_usr_now = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR);
+			u32 int_sts_now = vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS);
+			u32 reason_now = vpu_read_reg(inst->dev, W4_VPU_VINT_REASON);
+			u32 reason_usr_now = vpu_read_reg(inst->dev, W4_VPU_VINT_REASON_USR);
 
 			if (reason_usr_now || (int_sts_now && reason_now)) {
 				u32 clear_reason = reason_now ? reason_now : reason_usr_now;
 
 				if (clear_reason)
-					vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, clear_reason);
-				vpu_write_reg(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
+					vpu_write_reg(inst->dev, W4_VPU_VINT_REASON_CLR, clear_reason);
+				vpu_write_reg(inst->dev, W4_VPU_VINT_CLEAR, 0x1);
 				saw_irq_reason = true;
 			}
 
-			busy_now = vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS);
+			busy_now = vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS);
 			if (!busy_now)
 				break;
 
@@ -734,18 +588,18 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 					 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 				dev_warn(inst->dev->dev,
 					 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_en=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
-					 vpu_read_reg(inst->dev, W5_COMMAND),
-					 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-					 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
+					 vpu_read_reg(inst->dev, W4_COMMAND),
+					 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
+					 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
 					 vpu_read_reg(inst->dev, W4_RET_SUCCESS),
 					 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
 					 vpu_read_reg(inst->dev, W4_INST_INDEX),
 					 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-					 vpu_read_reg(inst->dev, W5_VPU_VINT_ENABLE),
-					 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
-					 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
-					 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR),
-					 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC));
+					 vpu_read_reg(inst->dev, W4_VPU_VINT_ENABLE),
+					 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
+					 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
+					 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON_USR),
+					 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 				return -ETIMEDOUT;
 			}
 
@@ -759,45 +613,45 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 		}
 
 		if (queue_status)
-			*queue_status = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
+			*queue_status = vpu_read_reg(inst->dev, W4_RET_QUEUE_STATUS);
 
 		if (!check_success)
 			return 0;
 
-		ret = wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+		ret = wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
 		if (ret) {
 			dev_warn(inst->dev->dev,
 				 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
 				 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
 				 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-				 vpu_read_reg(inst->dev, W5_COMMAND),
+				 vpu_read_reg(inst->dev, W4_COMMAND),
 				 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
 				 vpu_read_reg(inst->dev, W4_INST_INDEX));
 		}
 		return ret;
 	}
 
-	ret = wave5_wait_vpu_busy(inst->dev, W5_VPU_BUSY_STATUS);
+	ret = wave4_wait_vpu_busy(inst->dev, W4_VPU_BUSY_STATUS);
 	if (ret) {
 		dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
 			 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 		dev_warn(inst->dev->dev,
 			 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			 vpu_read_reg(inst->dev, W5_COMMAND),
-			 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
+			 vpu_read_reg(inst->dev, W4_COMMAND),
+			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
+			 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
 			 vpu_read_reg(inst->dev, W4_RET_SUCCESS),
 			 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
 			 vpu_read_reg(inst->dev, W4_INST_INDEX),
 			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
-			 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC));
+			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
+			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
+			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 		return -ETIMEDOUT;
 	}
 
 	if (queue_status)
-		*queue_status = vpu_read_reg(inst->dev, W5_RET_QUEUE_STATUS);
+		*queue_status = vpu_read_reg(inst->dev, W4_RET_QUEUE_STATUS);
 
 	/* In some cases we want to send multiple commands before checking
 	 * whether they are queued properly
@@ -805,35 +659,35 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 	if (!check_success)
 		return 0;
 
-	ret = wave5_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
+	ret = wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
 	if (ret) {
 		dev_warn(inst->dev->dev,
 			 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
 			 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
 			 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-			 vpu_read_reg(inst->dev, W5_COMMAND),
+			 vpu_read_reg(inst->dev, W4_COMMAND),
 			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
 			 vpu_read_reg(inst->dev, W4_INST_INDEX));
 	}
 	return ret;
 }
 
-static int wave5_send_query(struct vpu_device *vpu_dev, struct vpu_instance *inst,
+static int wave4_send_query(struct vpu_device *vpu_dev, struct vpu_instance *inst,
 			    enum query_opt query_opt)
 {
 	int ret;
 
 	vpu_write_reg(vpu_dev, W4_COMMAND_OPTION, query_opt);
-	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-	wave5_bit_issue_command(vpu_dev, inst, W5_QUERY);
+	vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
+	wave4_bit_issue_command(vpu_dev, inst, W4_QUERY);
 
-	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+	ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 	if (ret) {
-		dev_warn(vpu_dev->dev, "command: 'W5_QUERY', timed out opt=0x%x\n", query_opt);
+		dev_warn(vpu_dev->dev, "command: 'W4_QUERY', timed out opt=0x%x\n", query_opt);
 		return ret;
 	}
 
-	return wave5_vpu_firmware_command_queue_error_check(vpu_dev, NULL);
+	return wave4_vpu_firmware_command_queue_error_check(vpu_dev, NULL);
 }
 
 static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
@@ -841,24 +695,24 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 	int ret;
 
 	/*
-	 * W4_CMD_GET_FW_VERSION (0x100) collides with W5_DEC_ENC_PIC in the
-	 * Wave5 command enum, so issue the raw Wave4 command directly.
+	 * W4_CMD_GET_FW_VERSION (0x100) collides with W4_DEC_ENC_PIC in the
+	 * Wave4 command enum, so issue the raw Wave4 command directly.
 	 */
-	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
+	vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
 	vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
 	vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
 	vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
-	vpu_write_reg(vpu_dev, W5_COMMAND, W4_CMD_GET_FW_VERSION);
-	vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+	vpu_write_reg(vpu_dev, W4_COMMAND, W4_CMD_GET_FW_VERSION);
+	vpu_write_reg(vpu_dev, W4_VPU_HOST_INT_REQ, 1);
 
-	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+	ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 	if (ret) {
 		/*
 		 * Resident-firmware recovery may proceed even when GET_FW_VERSION
 		 * does not answer. Ensure BUSY is not left asserted, otherwise
 		 * subsequent CREATE_INSTANCE commands cannot be queued.
 		 */
-		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
+		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
 		return ret;
 	}
 
@@ -866,11 +720,11 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 		dev_warn(vpu_dev->dev,
 			 "w4 GET_FW_VERSION fail: ret_success=0 fail_reason=0x%x cmd=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
 			 vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-			 vpu_read_reg(vpu_dev, W5_COMMAND),
-			 vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
-			 vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
-			 vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
-		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
+			 vpu_read_reg(vpu_dev, W4_COMMAND),
+			 vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
+			 vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
+			 vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
+		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
 		return -EIO;
 	}
 
@@ -880,7 +734,7 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 	return 0;
 }
 
-static void setup_wave5_interrupts(struct vpu_device *vpu_dev)
+static void setup_wave4_interrupts(struct vpu_device *vpu_dev)
 {
 	u32 reg_val = 0;
 
@@ -904,10 +758,10 @@ static void setup_wave5_interrupts(struct vpu_device *vpu_dev)
 		reg_val |= BIT(15); /* BSBUF_EMPTY */
 	}
 
-	return vpu_write_reg(vpu_dev, W5_VPU_VINT_ENABLE, reg_val);
+	return vpu_write_reg(vpu_dev, W4_VPU_VINT_ENABLE, reg_val);
 }
 
-static int setup_wave5_properties(struct device *dev)
+static int setup_wave4_properties(struct device *dev)
 {
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	struct vpu_attr *p_attr = &vpu_dev->attr;
@@ -935,9 +789,9 @@ static int setup_wave5_properties(struct device *dev)
 		return ret;
 	}
 
-	std_def0 = vpu_read_reg(vpu_dev, W5_RET_STD_DEF0);
-	std_def1 = vpu_read_reg(vpu_dev, W5_RET_STD_DEF1);
-	conf_feature = vpu_read_reg(vpu_dev, W5_RET_CONF_FEATURE);
+	std_def0 = vpu_read_reg(vpu_dev, W4_RET_STD_DEF0);
+	std_def1 = vpu_read_reg(vpu_dev, W4_RET_STD_DEF1);
+	conf_feature = vpu_read_reg(vpu_dev, W4_RET_CONF_FEATURE);
 	vpu_dev->hw_std_def0 = std_def0;
 	vpu_dev->hw_std_def1 = std_def1;
 	vpu_dev->hw_conf_feature = conf_feature;
@@ -952,7 +806,7 @@ static int setup_wave5_properties(struct device *dev)
 
 	p_attr->support_decoders = vpu_dev->has_decoder ? BIT(STD_HEVC) : 0;
 	p_attr->support_encoders = vpu_dev->has_encoder ? BIT(STD_HEVC) : 0;
-	setup_wave5_interrupts(vpu_dev);
+	setup_wave4_interrupts(vpu_dev);
 
 	dev_dbg(dev, "w4 firmware revision: %u\n", fw_revision);
 	return 0;
@@ -992,36 +846,36 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 	if (code_size < code_bytes_required)
 		return -EINVAL;
 
-	ret = wave5_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
+	ret = wave4_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
 	if (ret < 0) {
 		dev_err(vpu_dev->dev, "VPU init, Writing firmware to common buffer, fail: %d\n",
 			ret);
 		return ret;
 	}
 
-	vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
+	vpu_write_reg(vpu_dev, W4_PO_CONF, 0);
 
-	vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
-	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
+	vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
+	ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_RESET_STATUS);
 	if (ret) {
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+		vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
 		dev_err(vpu_dev->dev, "VPU init(W4 reset-all) timeout\n");
 		return ret;
 	}
-	vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+	vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
 
 	/* clear registers */
 
-	for (i = W5_CMD_REG_BASE; i < W5_CMD_REG_END; i += 4)
+	for (i = W4_CMD_REG_BASE; i < W4_CMD_REG_END; i += 4)
 		vpu_write_reg(vpu_dev, i, 0x00);
 
 	{
 		u32 remap_size = (code_size >> 12) & 0x1ff;
 
-		reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CTRL, reg_val);
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_VADDR, 0x00000000);
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_PADDR, code_base);
+		reg_val = BIT(31) | (W4_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_CTRL, reg_val);
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_VADDR, 0x00000000);
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_PADDR, code_base);
 
 		vpu_write_reg(vpu_dev, W4_ADDR_CODE_BASE, code_base);
 		vpu_write_reg(vpu_dev, W4_CODE_SIZE, code_size);
@@ -1030,26 +884,26 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 		vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
 	}
 
-	setup_wave5_interrupts(vpu_dev);
+	setup_wave4_interrupts(vpu_dev);
 
 	vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
 	vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
 	vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
-	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-	vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-	vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
-	ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+	vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
+	vpu_write_reg(vpu_dev, W4_COMMAND, wave4_hw_command(vpu_dev, W4_INIT_VPU));
+	vpu_write_reg(vpu_dev, W4_VPU_REMAP_CORE_START, 1);
+	ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 	if (ret) {
-		u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
+		u32 vcpu_pc = vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC);
 
-		dev_err(vpu_dev->dev, "VPU init(W5_VPU_REMAP_CORE_START) timeout\n");
+		dev_err(vpu_dev->dev, "VPU init(W4_VPU_REMAP_CORE_START) timeout\n");
 		if (vcpu_pc && READ_ONCE(wave4_allow_resident_fw_fallback)) {
 			dev_warn(vpu_dev->dev,
 				 "w4 init timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 				 vcpu_pc);
-			vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
-			ret = setup_wave5_properties(dev);
+			vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
+			ret = setup_wave4_properties(dev);
 			if (!ret)
 				vpu_dev->fw_running = true;
 			return ret;
@@ -1060,23 +914,23 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 		}
 		dev_err(vpu_dev->dev,
 			"w4 init timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			vpu_read_reg(vpu_dev, W5_COMMAND),
-			vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
-			vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
-			vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
+			vpu_read_reg(vpu_dev, W4_COMMAND),
+			vpu_read_reg(vpu_dev, W4_VPU_BUSY_STATUS),
+			vpu_read_reg(vpu_dev, W4_VPU_HOST_INT_REQ),
+			vpu_read_reg(vpu_dev, W4_VPU_REMAP_CORE_START),
 			vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
 			vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-			vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
-			vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
-			vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
+			vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
+			vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
+			vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
 		return ret;
 	}
 
-	ret = wave5_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
+	ret = wave4_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
 	if (ret)
 		return ret;
 
-	ret = setup_wave5_properties(dev);
+	ret = setup_wave4_properties(dev);
 	if (!ret)
 		vpu_dev->fw_running = true;
 
@@ -1089,15 +943,15 @@ static int wave4_alloc_dec_workbuf(struct vpu_instance *inst)
 	int ret;
 
 	work->size = W4_DEC_WORKBUF_SIZE;
-	ret = wave5_vdi_allocate_dma_memory(inst->dev, work);
+	ret = wave4_vdi_allocate_dma_memory(inst->dev, work);
 	if (ret) {
 		memset(work, 0, sizeof(*work));
 		return ret;
 	}
 
-	ret = wave5_vdi_clear_memory(inst->dev, work);
+	ret = wave4_vdi_clear_memory(inst->dev, work);
 	if (ret < 0) {
-		wave5_vdi_free_dma_memory(inst->dev, work);
+		wave4_vdi_free_dma_memory(inst->dev, work);
 		return ret;
 	}
 
@@ -1148,17 +1002,17 @@ int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 	{
 		u32 fail_res = 0;
 
-		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, &fail_res);
+		ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, &fail_res);
 		if (ret)
 			dev_warn(inst->dev->dev, "w4 dec create_instance failed: %d (fail=0x%x)\n",
 				 ret, fail_res);
 	}
 	if (ret) {
-		wave5_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
+		wave4_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
 		return ret;
 	}
 
-	p_dec_info->product_code = vpu_read_reg(inst->dev, W5_PRODUCT_NUMBER);
+	p_dec_info->product_code = vpu_read_reg(inst->dev, W4_PRODUCT_NUMBER);
 
 	return 0;
 }
@@ -1171,7 +1025,7 @@ int wave4_vpu_hw_flush_instance(struct vpu_instance *inst)
 	u32 fail_res = 0;
 	int ret;
 
-	ret = send_firmware_command(inst, W5_FLUSH_INSTANCE, true, &reg_val, &fail_res);
+	ret = send_firmware_command(inst, W4_FLUSH_INSTANCE, true, &reg_val, &fail_res);
 	if (ret)
 		return ret;
 
@@ -1199,8 +1053,8 @@ static u32 get_bitstream_options(struct dec_info *info)
 	return bs_option;
 }
 
-static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst);
-static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size);
+static u32 wave4_vpu_dec_validate_sec_axi(struct vpu_instance *inst);
+static u32 wave4_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size);
 
 int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 {
@@ -1209,9 +1063,9 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	u32 bs_option;
 	u32 sec_axi;
 	dma_addr_t temp_base = inst->dev->common_mem.daddr + W4_MAX_CODE_BUF_SIZE;
-	u32 bs_rd_reg = wave5_dec_bs_rd_ptr_reg(inst->dev);
-	u32 bs_wr_reg = wave5_dec_bs_wr_ptr_reg(inst->dev);
-	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
+	u32 bs_rd_reg = wave4_dec_bs_rd_ptr_reg(inst->dev);
+	u32 bs_wr_reg = wave4_dec_bs_wr_ptr_reg(inst->dev);
+	u32 bs_opt_reg = wave4_dec_bs_option_reg(inst->dev);
 
 	if (!inst->codec_info)
 		return -EINVAL;
@@ -1285,8 +1139,8 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	vpu_write_reg(inst->dev, W4_CMD_DEC_SEVERITY_LEVEL, 0);
 	vpu_write_reg(inst->dev, W4_CMD_DEC_DISP_FLAG, 0);
 
-	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), INIT_SEQ_NORMAL);
-	vpu_write_reg(inst->dev, wave5_dec_force_fb_latency_reg(inst->dev), 0);
+	vpu_write_reg(inst->dev, wave4_dec_cmd_option_reg(inst->dev), INIT_SEQ_NORMAL);
+	vpu_write_reg(inst->dev, wave4_dec_force_fb_latency_reg(inst->dev), 0);
 
 	/*
 	 * Match BSP flow: DEC_PIC_HDR is issued here without a BUSY wait.
@@ -1297,7 +1151,7 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	 * issue command and return. Completion is handled by interrupt +
 	 * get_seq_info() in the caller.
 	 */
-	wave5_bit_issue_command(inst->dev, inst, W5_INIT_SEQ);
+	wave4_bit_issue_command(inst->dev, inst, W4_INIT_SEQ);
 
 	/* Wave420L does not provide reliable queue status fields for this path. */
 	p_dec_info->instance_queue_count = 0;
@@ -1309,7 +1163,7 @@ int wave4_vpu_dec_init_seq(struct vpu_instance *inst)
 	return 0;
 }
 
-static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initial_info *info)
+static void wave4_get_dec_seq_result(struct vpu_instance *inst, struct dec_initial_info *info)
 {
 	u32 reg_val;
 	u32 profile_compatibility_flag;
@@ -1357,7 +1211,7 @@ static void wave5_get_dec_seq_result(struct vpu_instance *inst, struct dec_initi
 		info->profile = FIELD_GET(SEQ_PARAM_PROFILE_MASK, reg_val);
 	}
 
-	/* Wave4 flow does not use the Wave521 task-buffer size query fields. */
+	/* Wave4 flow does not use the Wave421 task-buffer size query fields. */
 }
 
 int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_info *info)
@@ -1375,16 +1229,16 @@ int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 		vpu_read_reg(inst->dev, W4_RET_SUCCESS),
 		vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
 		vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO),
-		vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO),
+		vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO),
 		vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE),
-		vpu_read_reg(inst->dev, W5_RET_DEC_PIC_SIZE),
+		vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE),
 		vpu_read_reg(inst->dev, W4_BS_START_ADDR),
 		vpu_read_reg(inst->dev, W4_BS_SIZE),
 		vpu_read_reg(inst->dev, W4_BS_PARAM),
 		vpu_read_reg(inst->dev, W4_BS_OPTION),
 		vpu_read_reg(inst->dev, W4_BS_RD_PTR),
 		vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-		vpu_read_reg(inst->dev, W5_RET_DEC_BS_RD_PTR));
+		vpu_read_reg(inst->dev, W4_RET_DEC_BS_RD_PTR));
 
 	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
 		u32 fail_reason;
@@ -1392,17 +1246,17 @@ int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 		u32 dec_err_w5;
 		u32 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end;
 
-		/* Keep this explicit cross-bank dump for Wave4/Wave5 err-info parity checks. */
-		dec_err_w5 = vpu_read_reg(inst->dev, W5_RET_DEC_ERR_INFO);
+		/* Keep this explicit cross-bank dump for Wave4/Wave4 err-info parity checks. */
+		dec_err_w5 = vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO);
 		dev_warn(inst->dev->dev,
 			 "w4 seq-fail err banks: err_w4=0x%x err_w5=0x%x\n",
 			 vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO), dec_err_w5);
 
-		fio_bs_data = wave5_fio_readl(inst->dev, 0x8064);
-		fio_bus_busy = wave5_fio_readl(inst->dev, 0x8068);
-		fio_bit_pc = wave5_fio_readl(inst->dev, 0x8018);
-		fio_bs_start = wave5_fio_readl(inst->dev, 0x811c);
-		fio_bs_end = wave5_fio_readl(inst->dev, 0x8120);
+		fio_bs_data = wave4_fio_readl(inst->dev, 0x8064);
+		fio_bus_busy = wave4_fio_readl(inst->dev, 0x8068);
+		fio_bit_pc = wave4_fio_readl(inst->dev, 0x8018);
+		fio_bs_start = wave4_fio_readl(inst->dev, 0x811c);
+		fio_bs_end = wave4_fio_readl(inst->dev, 0x8120);
 			dev_warn(inst->dev->dev,
 				 "w4 fio debug: bs_data=0x%x bus_busy=0x%x bit_pc=0x%x bs_start=0x%x bs_end=0x%x\n",
 				 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end);
@@ -1449,7 +1303,7 @@ int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 		}
 	}
 
-	wave5_get_dec_seq_result(inst, info);
+	wave4_get_dec_seq_result(inst, info);
 
 	return 0;
 }
@@ -1496,7 +1350,7 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 
 		if (inst->std == W_HEVC_DEC || inst->std == W_AVC_DEC) {
 			size = ALIGN(ALIGN(mv_col_size, 16), BUFFER_MARGIN) + BUFFER_MARGIN;
-			ret = wave5_vdi_allocate_array(inst->dev, p_dec_info->vb_mv, count, size);
+			ret = wave4_vdi_allocate_array(inst->dev, p_dec_info->vb_mv, count, size);
 			if (ret)
 				goto free_mv_buffers;
 		}
@@ -1507,12 +1361,12 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 		fbc_c_tbl_size = ALIGN(WAVE5_FBC_CHROMA_TABLE_SIZE(frame_width, frame_height), 16);
 
 		size = ALIGN(fbc_y_tbl_size, BUFFER_MARGIN) + BUFFER_MARGIN;
-		ret = wave5_vdi_allocate_array(inst->dev, p_dec_info->vb_fbc_y_tbl, count, size);
+		ret = wave4_vdi_allocate_array(inst->dev, p_dec_info->vb_fbc_y_tbl, count, size);
 		if (ret)
 			goto free_fbc_y_tbl_buffers;
 
 		size = ALIGN(fbc_c_tbl_size, BUFFER_MARGIN) + BUFFER_MARGIN;
-		ret = wave5_vdi_allocate_array(inst->dev, p_dec_info->vb_fbc_c_tbl, count, size);
+		ret = wave4_vdi_allocate_array(inst->dev, p_dec_info->vb_fbc_c_tbl, count, size);
 		if (ret)
 			goto free_fbc_c_tbl_buffers;
 
@@ -1523,7 +1377,7 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 		if (inst->output_format == FORMAT_422)
 			color_format = 1;
 	}
-	vpu_write_reg(inst->dev, W5_PIC_SIZE, pic_size);
+	vpu_write_reg(inst->dev, W4_PIC_SIZE, pic_size);
 
 	reg_val = (bwb_flag << 28) |
 		  (pixel_order << 23) |
@@ -1533,49 +1387,49 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 		  (nv21 << 17) |
 		  (cbcr_interleave << 16) |
 		  (fb_arr[0].stride);
-	vpu_write_reg(inst->dev, W5_COMMON_PIC_INFO, reg_val);
+	vpu_write_reg(inst->dev, W4_COMMON_PIC_INFO, reg_val);
 
 	remain = count;
 	cnt_8_chunk = DIV_ROUND_UP(count, 8);
 	idx = 0;
 	for (j = 0; j < cnt_8_chunk; j++) {
 		reg_val = (j == cnt_8_chunk - 1) << 4 | ((j == 0) << 3);
-		vpu_write_reg(inst->dev, W5_SFB_OPTION, reg_val);
+		vpu_write_reg(inst->dev, W4_SFB_OPTION, reg_val);
 		start_no = j * 8;
 		end_no = start_no + ((remain >= 8) ? 8 : remain) - 1;
 
-		vpu_write_reg(inst->dev, W5_SET_FB_NUM, (start_no << 8) | end_no);
+		vpu_write_reg(inst->dev, W4_SET_FB_NUM, (start_no << 8) | end_no);
 
 		for (i = 0; i < 8 && i < remain; i++) {
 			addr_y = fb_arr[i + start_no].buf_y;
 			addr_cb = fb_arr[i + start_no].buf_cb;
 			addr_cr = fb_arr[i + start_no].buf_cr;
-			vpu_write_reg(inst->dev, W5_ADDR_LUMA_BASE0 + (i << 4), addr_y);
-			vpu_write_reg(inst->dev, W5_ADDR_CB_BASE0 + (i << 4), addr_cb);
+			vpu_write_reg(inst->dev, W4_ADDR_LUMA_BASE0 + (i << 4), addr_y);
+			vpu_write_reg(inst->dev, W4_ADDR_CB_BASE0 + (i << 4), addr_cb);
 			if (map_type >= COMPRESSED_FRAME_MAP) {
 				/* luma FBC offset table */
-				vpu_write_reg(inst->dev, W5_ADDR_FBC_Y_OFFSET0 + (i << 4),
+				vpu_write_reg(inst->dev, W4_ADDR_FBC_Y_OFFSET0 + (i << 4),
 					      p_dec_info->vb_fbc_y_tbl[idx].daddr);
 				/* chroma FBC offset table */
-				vpu_write_reg(inst->dev, W5_ADDR_FBC_C_OFFSET0 + (i << 4),
+				vpu_write_reg(inst->dev, W4_ADDR_FBC_C_OFFSET0 + (i << 4),
 					      p_dec_info->vb_fbc_c_tbl[idx].daddr);
-				vpu_write_reg(inst->dev, W5_ADDR_MV_COL0 + (i << 2),
+				vpu_write_reg(inst->dev, W4_ADDR_MV_COL0 + (i << 2),
 					      p_dec_info->vb_mv[idx].daddr);
 			} else {
-				vpu_write_reg(inst->dev, W5_ADDR_CR_BASE0 + (i << 4), addr_cr);
-				vpu_write_reg(inst->dev, W5_ADDR_FBC_C_OFFSET0 + (i << 4), 0);
-				vpu_write_reg(inst->dev, W5_ADDR_MV_COL0 + (i << 2), 0);
+				vpu_write_reg(inst->dev, W4_ADDR_CR_BASE0 + (i << 4), addr_cr);
+				vpu_write_reg(inst->dev, W4_ADDR_FBC_C_OFFSET0 + (i << 4), 0);
+				vpu_write_reg(inst->dev, W4_ADDR_MV_COL0 + (i << 2), 0);
 			}
 			idx++;
 		}
 		remain -= i;
 
-		ret = send_firmware_command(inst, W5_SET_FB, false, NULL, NULL);
+		ret = send_firmware_command(inst, W4_SET_FB, false, NULL, NULL);
 		if (ret)
 			goto free_buffers;
 	}
 
-	reg_val = vpu_read_reg(inst->dev, W5_RET_SUCCESS);
+	reg_val = vpu_read_reg(inst->dev, W4_RET_SUCCESS);
 	if (!reg_val) {
 		ret = -EIO;
 		goto free_buffers;
@@ -1586,17 +1440,17 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 free_buffers:
 free_fbc_c_tbl_buffers:
 	for (i = 0; i < count; i++)
-		wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_c_tbl[i]);
+		wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_c_tbl[i]);
 free_fbc_y_tbl_buffers:
 	for (i = 0; i < count; i++)
-		wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_y_tbl[i]);
+		wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_y_tbl[i]);
 free_mv_buffers:
 	for (i = 0; i < count; i++)
-		wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_mv[i]);
+		wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_mv[i]);
 	return ret;
 }
 
-static u32 wave5_vpu_dec_validate_sec_axi(struct vpu_instance *inst)
+static u32 wave4_vpu_dec_validate_sec_axi(struct vpu_instance *inst)
 {
 	u32 bitdepth = inst->codec_info->dec_info.initial_info.luma_bitdepth;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
@@ -1631,9 +1485,9 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 {
 	u32 reg_val;
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
-	u32 bs_rd_reg = wave5_dec_bs_rd_ptr_reg(inst->dev);
-	u32 bs_wr_reg = wave5_dec_bs_wr_ptr_reg(inst->dev);
-	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
+	u32 bs_rd_reg = wave4_dec_bs_rd_ptr_reg(inst->dev);
+	u32 bs_wr_reg = wave4_dec_bs_wr_ptr_reg(inst->dev);
+	u32 bs_opt_reg = wave4_dec_bs_option_reg(inst->dev);
 	int ret;
 
 	vpu_write_reg(inst->dev, W4_BS_PARAM,
@@ -1650,7 +1504,7 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	vpu_write_reg(inst->dev, bs_opt_reg, get_bitstream_options(p_dec_info));
 
 	/* secondary AXI */
-	reg_val = wave5_vpu_dec_validate_sec_axi(inst);
+	reg_val = wave4_vpu_dec_validate_sec_axi(inst);
 	reg_val = wave4_apply_dec_sec_axi_mask(reg_val);
 	vpu_write_reg(inst->dev, W4_USE_SEC_AXI, reg_val);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
@@ -1668,19 +1522,19 @@ int wave4_vpu_decode(struct vpu_instance *inst, u32 *fail_res)
 	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_SIZE, p_dec_info->user_data_buf_size);
 	vpu_write_reg(inst->dev, W4_CMD_DEC_USER_PARAM, W4_USER_DATA_ENDIAN_LITTLE);
 	vpu_write_reg(inst->dev, W4_CMD_DEC_SEVERITY_LEVEL, 0);
-	vpu_write_reg(inst->dev, wave5_dec_user_mask_reg(inst->dev),
+	vpu_write_reg(inst->dev, wave4_dec_user_mask_reg(inst->dev),
 		      p_dec_info->user_data_enable);
 	vpu_write_reg(inst->dev, W4_CMD_DEC_VCORE_LIMIT, 1);
 
-	vpu_write_reg(inst->dev, wave5_dec_cmd_option_reg(inst->dev), DEC_PIC_NORMAL);
-	vpu_write_reg(inst->dev, wave5_dec_temp_id_reg(inst->dev),
+	vpu_write_reg(inst->dev, wave4_dec_cmd_option_reg(inst->dev), DEC_PIC_NORMAL);
+	vpu_write_reg(inst->dev, wave4_dec_temp_id_reg(inst->dev),
 		      p_dec_info->target_temp_id + 1);
-	vpu_write_reg(inst->dev, wave5_dec_seq_change_reg(inst->dev), p_dec_info->seq_change_mask);
+	vpu_write_reg(inst->dev, wave4_dec_seq_change_reg(inst->dev), p_dec_info->seq_change_mask);
 	/* When reordering is disabled we force the latency of the framebuffers */
-	vpu_write_reg(inst->dev, wave5_dec_force_fb_latency_reg(inst->dev),
+	vpu_write_reg(inst->dev, wave4_dec_force_fb_latency_reg(inst->dev),
 		      !p_dec_info->reorder_enable);
 
-	ret = send_firmware_command(inst, W5_DEC_ENC_PIC, true, &reg_val, fail_res);
+	ret = send_firmware_command(inst, W4_DEC_ENC_PIC, true, &reg_val, fail_res);
 	if (ret == -ETIMEDOUT)
 		return ret;
 
@@ -1803,7 +1657,7 @@ int wave4_vpu_dec_get_result(struct vpu_instance *inst, struct dec_output_info *
 	if (result->sequence_changed) {
 		memcpy((void *)&p_dec_info->new_seq_info, (void *)&p_dec_info->initial_info,
 		       sizeof(struct dec_initial_info));
-		wave5_get_dec_seq_result(inst, &p_dec_info->new_seq_info);
+		wave4_get_dec_seq_result(inst, &p_dec_info->new_seq_info);
 	}
 
 	result->dec_host_cmd_tick = 0;
@@ -1837,7 +1691,7 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 	if (code_size < code_bytes_required)
 		return -EINVAL;
 
-	old_code_base = vpu_read_reg(vpu_dev, W5_VPU_REMAP_PADDR);
+	old_code_base = vpu_read_reg(vpu_dev, W4_VPU_REMAP_PADDR);
 	expected_code_base = code_base;
 	dev_dbg(vpu_dev->dev,
 		"w4 reinit: remap old=0x%llx expected=0x%llx code_base=0x%llx fw_size=%zu\n",
@@ -1846,23 +1700,23 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 		(unsigned long long)code_base, size);
 
 	if (old_code_base != expected_code_base) {
-		ret = wave5_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
+		ret = wave4_vdi_write_memory(vpu_dev, common_vb, 0, fw, size);
 		if (ret < 0) {
 			dev_err(vpu_dev->dev,
 				"VPU init, Writing firmware to common buffer, fail: %d\n", ret);
 			return ret;
 		}
 
-		vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
+		vpu_write_reg(vpu_dev, W4_PO_CONF, 0);
 
 		/*
 		 * Match Wave4 BSP reset ordering: gate GDI transactions before
 		 * asserting reset, then release GDI bus control afterwards.
 		 */
-		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x100);
-		ret = wave5_wait_bus_busy(vpu_dev, W5_GDI_BUS_STATUS);
+		wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x100);
+		ret = wave4_wait_bus_busy(vpu_dev, W4_GDI_BUS_STATUS);
 		if (ret) {
-			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+			wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x00);
 			dev_err(vpu_dev->dev, "VPU reinit(W4 gdi bus idle) timeout\n");
 			return ret;
 		}
@@ -1871,28 +1725,28 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 		 * Follow Wave4 BSP path: assert full block reset directly
 		 * before remap/INIT_VPU programming.
 		 */
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
+		vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, W4_RESET_ALL_BLOCKS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_RESET_STATUS);
 		if (ret) {
-			vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
-			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+			vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
+			wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x00);
 			dev_err(vpu_dev->dev, "VPU reinit(W4 reset-all) timeout\n");
 			return ret;
 		}
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
-		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+		vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
+		wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x00);
 
 		/* clear command window registers */
-		for (reg_val = W5_CMD_REG_BASE; reg_val < W5_CMD_REG_END; reg_val += 4)
+		for (reg_val = W4_CMD_REG_BASE; reg_val < W4_CMD_REG_END; reg_val += 4)
 			vpu_write_reg(vpu_dev, reg_val, 0x00);
 
 		{
 			u32 remap_size = (code_size >> 12) & 0x1ff;
 
-			reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
-			vpu_write_reg(vpu_dev, W5_VPU_REMAP_CTRL, reg_val);
-			vpu_write_reg(vpu_dev, W5_VPU_REMAP_VADDR, 0x00000000);
-			vpu_write_reg(vpu_dev, W5_VPU_REMAP_PADDR, code_base);
+			reg_val = BIT(31) | (W4_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
+			vpu_write_reg(vpu_dev, W4_VPU_REMAP_CTRL, reg_val);
+			vpu_write_reg(vpu_dev, W4_VPU_REMAP_VADDR, 0x00000000);
+			vpu_write_reg(vpu_dev, W4_VPU_REMAP_PADDR, code_base);
 
 			vpu_write_reg(vpu_dev, W4_ADDR_CODE_BASE, code_base);
 			vpu_write_reg(vpu_dev, W4_CODE_SIZE, code_size);
@@ -1901,26 +1755,26 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 			vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
 		}
 
-		setup_wave5_interrupts(vpu_dev);
+		setup_wave4_interrupts(vpu_dev);
 		vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
 		vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
 		vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
-		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_INIT_VPU));
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
+		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
+		vpu_write_reg(vpu_dev, W4_COMMAND, wave4_hw_command(vpu_dev, W4_INIT_VPU));
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_CORE_START, 1);
 
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 		if (ret) {
-			u32 vcpu_pc = vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC);
+			u32 vcpu_pc = vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC);
 
-			dev_err(vpu_dev->dev, "VPU reinit(W5_VPU_REMAP_CORE_START) timeout\n");
+			dev_err(vpu_dev->dev, "VPU reinit(W4_VPU_REMAP_CORE_START) timeout\n");
 			if (vcpu_pc && READ_ONCE(wave4_allow_resident_fw_fallback)) {
 				dev_warn(vpu_dev->dev,
 					 "w4 reinit timeout with live VCPU (pc=0x%x), clearing BUSY and using resident firmware\n",
 					 vcpu_pc);
-				vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
-				ret = setup_wave5_properties(dev);
+				vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
+				ret = setup_wave4_properties(dev);
 				if (!ret)
 					vpu_dev->fw_running = true;
 				return ret;
@@ -1931,24 +1785,24 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 			}
 			dev_err(vpu_dev->dev,
 				"w4 reinit timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-				vpu_read_reg(vpu_dev, W5_COMMAND),
-				vpu_read_reg(vpu_dev, W5_VPU_BUSY_STATUS),
-				vpu_read_reg(vpu_dev, W5_VPU_HOST_INT_REQ),
-				vpu_read_reg(vpu_dev, W5_VPU_REMAP_CORE_START),
+				vpu_read_reg(vpu_dev, W4_COMMAND),
+				vpu_read_reg(vpu_dev, W4_VPU_BUSY_STATUS),
+				vpu_read_reg(vpu_dev, W4_VPU_HOST_INT_REQ),
+				vpu_read_reg(vpu_dev, W4_VPU_REMAP_CORE_START),
 				vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
 				vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-				vpu_read_reg(vpu_dev, W5_VPU_VPU_INT_STS),
-				vpu_read_reg(vpu_dev, W5_VPU_VINT_REASON),
-				vpu_read_reg(vpu_dev, W5_VCPU_CUR_PC));
+				vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
+				vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
+				vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
 			return ret;
 		}
 
-		ret = wave5_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
+		ret = wave4_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
 		if (ret)
 			return ret;
 	}
 
-	ret = setup_wave5_properties(dev);
+	ret = setup_wave4_properties(dev);
 	if (!ret)
 		vpu_dev->fw_running = true;
 
@@ -1968,7 +1822,7 @@ int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 	(void)code;
 
 	if (i_sleep_wake) {
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 		if (ret)
 			return ret;
 
@@ -1977,16 +1831,16 @@ int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 		 * 1 = VPU
 		 * 0 = Host processor
 		 */
-		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_SLEEP_VPU));
+		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
+		vpu_write_reg(vpu_dev, W4_COMMAND, wave4_hw_command(vpu_dev, W4_SLEEP_VPU));
 		/* Send an interrupt named HOST to the VPU */
-		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+		vpu_write_reg(vpu_dev, W4_VPU_HOST_INT_REQ, 1);
 
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 		if (ret)
 			return ret;
 
-		ret = wave5_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
+		ret = wave4_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
 		if (ret)
 			return ret;
 	} else { /* restore */
@@ -2003,13 +1857,13 @@ int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 		}
 
 		/* Power on without DEBUG mode */
-		vpu_write_reg(vpu_dev, W5_PO_CONF, 0);
+		vpu_write_reg(vpu_dev, W4_PO_CONF, 0);
 
 		remap_size = (code_size >> 12) & 0x1ff;
-		reg_val = BIT(31) | (W5_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CTRL, reg_val);
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_VADDR, 0x00000000);
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_PADDR, code_base);
+		reg_val = BIT(31) | (W4_REMAP_INDEX0 << 12) | BIT(11) | remap_size;
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_CTRL, reg_val);
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_VADDR, 0x00000000);
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_PADDR, code_base);
 
 		vpu_write_reg(vpu_dev, W4_ADDR_CODE_BASE, code_base);
 		vpu_write_reg(vpu_dev, W4_CODE_SIZE, code_size);
@@ -2017,24 +1871,24 @@ int wave4_vpu_sleep_wake(struct device *dev, bool i_sleep_wake, const uint16_t *
 		vpu_write_reg(vpu_dev, W4_TIMEOUT_CNT, 0xffffffff);
 		vpu_write_reg(vpu_dev, W4_HW_OPTION, 0);
 
-		setup_wave5_interrupts(vpu_dev);
+		setup_wave4_interrupts(vpu_dev);
 		vpu_write_reg(vpu_dev, W4_RET_SUCCESS, 0);
 		vpu_write_reg(vpu_dev, W4_CORE_INDEX, 0);
 		vpu_write_reg(vpu_dev, W4_INST_INDEX, 0);
 
-		vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 1);
-		vpu_write_reg(vpu_dev, W5_COMMAND, wave5_hw_command(vpu_dev, W5_WAKEUP_VPU));
-		vpu_write_reg(vpu_dev, W5_VPU_HOST_INT_REQ, 1);
+		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 1);
+		vpu_write_reg(vpu_dev, W4_COMMAND, wave4_hw_command(vpu_dev, W4_WAKEUP_VPU));
+		vpu_write_reg(vpu_dev, W4_VPU_HOST_INT_REQ, 1);
 		/* Start VPU after settings */
-		vpu_write_reg(vpu_dev, W5_VPU_REMAP_CORE_START, 1);
+		vpu_write_reg(vpu_dev, W4_VPU_REMAP_CORE_START, 1);
 
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_BUSY_STATUS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_BUSY_STATUS);
 		if (ret) {
-			dev_err(vpu_dev->dev, "VPU wakeup(W5_VPU_REMAP_CORE_START) timeout\n");
+			dev_err(vpu_dev->dev, "VPU wakeup(W4_VPU_REMAP_CORE_START) timeout\n");
 			return ret;
 		}
 
-		return wave5_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
+		return wave4_vpu_firmware_command_queue_error_check(vpu_dev, &reason_code);
 	}
 
 	return 0;
@@ -2047,7 +1901,7 @@ int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	struct vpu_attr *p_attr = &vpu_dev->attr;
 	/* VPU doesn't send response. force to set BUSY flag to 0. */
-	vpu_write_reg(vpu_dev, W5_VPU_BUSY_STATUS, 0);
+	vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
 
 	if (reset_mode == SW_RESET_SAFETY) {
 		ret = wave4_vpu_sleep_wake(dev, true, NULL, 0);
@@ -2055,7 +1909,7 @@ int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 			return ret;
 	}
 
-	val = vpu_read_reg(vpu_dev, W5_VPU_RET_VPU_CONFIG0);
+	val = vpu_read_reg(vpu_dev, W4_VPU_RET_VPU_CONFIG0);
 	if ((val >> 16) & 0x1)
 		p_attr->support_backbone = true;
 	if ((val >> 22) & 0x1)
@@ -2070,43 +1924,43 @@ int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 		if (p_attr->support_vcore_backbone) {
 			if (p_attr->support_vcpu_backbone) {
 				/* step1 : disable request */
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCPU, 0xFF);
+				wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCPU, 0xFF);
 
 				/* step2 : waiting for completion of bus transaction */
-				ret = wave5_wait_vcpu_bus_busy(vpu_dev,
-							       W5_BACKBONE_BUS_STATUS_VCPU);
+				ret = wave4_wait_vcpu_bus_busy(vpu_dev,
+							       W4_BACKBONE_BUS_STATUS_VCPU);
 				if (ret) {
-					wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCPU, 0x00);
+					wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCPU, 0x00);
 					return ret;
 				}
 			}
 			/* step1 : disable request */
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCORE0, 0x7);
+			wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCORE0, 0x7);
 
 			/* step2 : waiting for completion of bus transaction */
-			if (wave5_wait_bus_busy(vpu_dev, W5_BACKBONE_BUS_STATUS_VCORE0)) {
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCORE0, 0x00);
+			if (wave4_wait_bus_busy(vpu_dev, W4_BACKBONE_BUS_STATUS_VCORE0)) {
+				wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCORE0, 0x00);
 				return -EBUSY;
 			}
 		} else {
 			/* step1 : disable request */
-			wave5_fio_writel(vpu_dev, W5_COMBINED_BACKBONE_BUS_CTRL, 0x7);
+			wave4_fio_writel(vpu_dev, W4_COMBINED_BACKBONE_BUS_CTRL, 0x7);
 
 			/* step2 : waiting for completion of bus transaction */
-			if (wave5_wait_bus_busy(vpu_dev, W5_COMBINED_BACKBONE_BUS_STATUS)) {
-				wave5_fio_writel(vpu_dev, W5_COMBINED_BACKBONE_BUS_CTRL, 0x00);
+			if (wave4_wait_bus_busy(vpu_dev, W4_COMBINED_BACKBONE_BUS_STATUS)) {
+				wave4_fio_writel(vpu_dev, W4_COMBINED_BACKBONE_BUS_CTRL, 0x00);
 				return -EBUSY;
 			}
 		}
 	} else {
 		dev_dbg(dev, "%s: backbone NOT supported\n", __func__);
 		/* step1 : disable request */
-		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x100);
+		wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x100);
 
 		/* step2 : waiting for completion of bus transaction */
-		ret = wave5_wait_bus_busy(vpu_dev, W5_GDI_BUS_STATUS);
+		ret = wave4_wait_bus_busy(vpu_dev, W4_GDI_BUS_STATUS);
 		if (ret) {
-			wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+			wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x00);
 			return ret;
 		}
 	}
@@ -2115,33 +1969,33 @@ int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 	case SW_RESET_ON_BOOT:
 	case SW_RESET_FORCE:
 	case SW_RESET_SAFETY:
-		val = W5_RST_BLOCK_ALL;
+		val = W4_RST_BLOCK_ALL;
 		break;
 	default:
 		return -EINVAL;
 	}
 
 	if (val) {
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, val);
+		vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, val);
 
-		ret = wave5_wait_vpu_busy(vpu_dev, W5_VPU_RESET_STATUS);
+		ret = wave4_wait_vpu_busy(vpu_dev, W4_VPU_RESET_STATUS);
 		if (ret) {
-			vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+			vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
 			return ret;
 		}
-		vpu_write_reg(vpu_dev, W5_VPU_RESET_REQ, 0);
+		vpu_write_reg(vpu_dev, W4_VPU_RESET_REQ, 0);
 	}
 	/* step3 : must clear GDI_BUS_CTRL after done SW_RESET */
 	if (p_attr->support_backbone) {
 		if (p_attr->support_vcore_backbone) {
 			if (p_attr->support_vcpu_backbone)
-				wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCPU, 0x00);
-			wave5_fio_writel(vpu_dev, W5_BACKBONE_BUS_CTRL_VCORE0, 0x00);
+				wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCPU, 0x00);
+			wave4_fio_writel(vpu_dev, W4_BACKBONE_BUS_CTRL_VCORE0, 0x00);
 		} else {
-			wave5_fio_writel(vpu_dev, W5_COMBINED_BACKBONE_BUS_CTRL, 0x00);
+			wave4_fio_writel(vpu_dev, W4_COMBINED_BACKBONE_BUS_CTRL, 0x00);
 		}
 	} else {
-		wave5_fio_writel(vpu_dev, W5_GDI_BUS_CTRL, 0x00);
+		wave4_fio_writel(vpu_dev, W4_GDI_BUS_CTRL, 0x00);
 	}
 	if (reset_mode == SW_RESET_SAFETY || reset_mode == SW_RESET_FORCE)
 		ret = wave4_vpu_sleep_wake(dev, false, NULL, 0);
@@ -2151,14 +2005,14 @@ int wave4_vpu_reset(struct device *dev, enum sw_reset_mode reset_mode)
 
 int wave4_vpu_dec_finish_seq(struct vpu_instance *inst, u32 *fail_res)
 {
-	return send_firmware_command(inst, W5_DESTROY_INSTANCE, true, NULL, fail_res);
+	return send_firmware_command(inst, W4_DESTROY_INSTANCE, true, NULL, fail_res);
 }
 
 int wave4_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
-	u32 bs_opt_reg = wave5_dec_bs_option_reg(inst->dev);
-	u32 bs_wr_reg = wave5_dec_bs_wr_ptr_reg(inst->dev);
+	u32 bs_opt_reg = wave4_dec_bs_option_reg(inst->dev);
+	u32 bs_wr_reg = wave4_dec_bs_wr_ptr_reg(inst->dev);
 	bool running = (inst->state == VPU_INST_STATE_PIC_RUN);
 
 	p_dec_info->stream_endflag = eos ? 1 : 0;
@@ -2176,7 +2030,7 @@ int wave4_vpu_dec_set_bitstream_flag(struct vpu_instance *inst, bool eos)
 
 	/*
 	 * Wave4 updates bitstream state via register writes only.
-	 * W5_UPDATE_BS is not valid in this command space.
+	 * W4_UPDATE_BS is not valid in this command space.
 	 */
 	return 0;
 }
@@ -2186,14 +2040,14 @@ int wave4_dec_clr_disp_flag(struct vpu_instance *inst, unsigned int index)
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
 
-	vpu_write_reg(inst->dev, W5_CMD_DEC_CLR_DISP_IDC, BIT(index));
-	vpu_write_reg(inst->dev, W5_CMD_DEC_SET_DISP_IDC, 0);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_CLR_DISP_IDC, BIT(index));
+	vpu_write_reg(inst->dev, W4_CMD_DEC_SET_DISP_IDC, 0);
 
-	ret = wave5_send_query(inst->dev, inst, UPDATE_DISP_FLAG);
+	ret = wave4_send_query(inst->dev, inst, UPDATE_DISP_FLAG);
 	if (ret)
 		return ret;
 
-	p_dec_info->frame_display_flag = vpu_read_reg(inst->dev, W5_RET_DEC_DISP_IDC);
+	p_dec_info->frame_display_flag = vpu_read_reg(inst->dev, W4_RET_DEC_DISP_IDC);
 
 	return 0;
 }
@@ -2202,10 +2056,10 @@ int wave4_dec_set_disp_flag(struct vpu_instance *inst, unsigned int index)
 {
 	int ret;
 
-	vpu_write_reg(inst->dev, W5_CMD_DEC_CLR_DISP_IDC, 0);
-	vpu_write_reg(inst->dev, W5_CMD_DEC_SET_DISP_IDC, BIT(index));
+	vpu_write_reg(inst->dev, W4_CMD_DEC_CLR_DISP_IDC, 0);
+	vpu_write_reg(inst->dev, W4_CMD_DEC_SET_DISP_IDC, BIT(index));
 
-	ret = wave5_send_query(inst->dev, inst, UPDATE_DISP_FLAG);
+	ret = wave4_send_query(inst->dev, inst, UPDATE_DISP_FLAG);
 	if (ret)
 		return ret;
 
@@ -2216,9 +2070,9 @@ int wave4_vpu_clear_interrupt(struct vpu_instance *inst, u32 flags)
 {
 	u32 interrupt_reason;
 
-	interrupt_reason = vpu_read_reg(inst->dev, W5_VPU_VINT_REASON_USR);
+	interrupt_reason = vpu_read_reg(inst->dev, W4_VPU_VINT_REASON_USR);
 	interrupt_reason &= ~flags;
-	vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_USR, interrupt_reason);
+	vpu_write_reg(inst->dev, W4_VPU_VINT_REASON_USR, interrupt_reason);
 
 	return 0;
 }
@@ -2276,13 +2130,13 @@ int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 	}
 
 	p_enc_info->vb_work.size = W4_ENC_WORKBUF_SIZE;
-	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &p_enc_info->vb_work);
+	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &p_enc_info->vb_work);
 	if (ret) {
 		memset(&p_enc_info->vb_work, 0, sizeof(p_enc_info->vb_work));
 		return ret;
 	}
 
-	wave5_vdi_clear_memory(vpu_dev, &p_enc_info->vb_work);
+	wave4_vdi_clear_memory(vpu_dev, &p_enc_info->vb_work);
 
 	{
 		u32 fail_res = 0;
@@ -2290,7 +2144,7 @@ int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
 		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
 		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
-		ret = send_firmware_command(inst, W5_CREATE_INSTANCE, true, NULL, &fail_res);
+		ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, &fail_res);
 		if (ret)
 			dev_warn(inst->dev->dev, "w4 enc create_instance failed: %d (fail=0x%x)\n",
 				 ret, fail_res);
@@ -2308,16 +2162,16 @@ int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 	p_enc_info->stream_buf_end_addr = buffer_addr + buffer_size;
 	p_enc_info->stride = 0;
 	p_enc_info->initial_info_obtained = false;
-	p_enc_info->product_code = vpu_read_reg(inst->dev, W5_PRODUCT_NUMBER);
+	p_enc_info->product_code = vpu_read_reg(inst->dev, W4_PRODUCT_NUMBER);
 
 	return 0;
 free_vb_work:
-	if (wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_work))
+	if (wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_work))
 		memset(&p_enc_info->vb_work, 0, sizeof(p_enc_info->vb_work));
 	return ret;
 }
 
-static void wave5_set_enc_crop_info(u32 codec, struct enc_wave_param *param, int rot_mode,
+static void wave4_set_enc_crop_info(u32 codec, struct enc_wave_param *param, int rot_mode,
 				    int src_width, int src_height)
 {
 	int aligned_width = (codec == W_HEVC_ENC) ? ALIGN(src_width, 32) : ALIGN(src_width, 16);
@@ -2450,7 +2304,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		}
 	}
 
-	wave5_set_enc_crop_info(inst->std, p_param, rot_mir_mode, p_open_param->pic_width,
+	wave4_set_enc_crop_info(inst->std, p_param, rot_mir_mode, p_open_param->pic_width,
 				p_open_param->pic_height);
 
 	{
@@ -2476,7 +2330,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 			      (p_enc_info->line_buf_int_en << 6) |
 			      wave4_resolve_bs_endian_nibble());
 
-		sec_axi = wave5_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
+		sec_axi = wave4_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
 		sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 		vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI,
 			      inst->dev->sram_buf.daddr);
@@ -2577,7 +2431,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		vpu_write_reg(inst->dev, W4_CMD_ENC_TIME_SCALE, 0);
 		vpu_write_reg(inst->dev, W4_CMD_ENC_NUM_TICKS_POC_DIFF_ONE, 0);
 
-			reg_val = send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
+			reg_val = send_firmware_command(inst, W4_ENC_SET_PARAM, false, NULL, NULL);
 			if (reg_val) {
 				dev_warn(inst->dev->dev,
 					 "w4 enc set_param failed (%d): fail=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x rc=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] work=[0x%x+0x%x] temp=[0x%x+0x%x] sec_axi=[0x%x+0x%x use=0x%x] pc=0x%x busy=0x%x host_int=0x%x\n",
@@ -2599,18 +2453,18 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 				 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
 				 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
 				 vpu_read_reg(inst->dev, W4_USE_SEC_AXI),
-				 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC),
-				 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-				 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ));
+				 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC),
+				 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
+				 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ));
 		}
 		return reg_val;
 	}
 
 	/* SET_PARAM + COMMON */
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_SET_PARAM_OPTION, OPT_COMMON);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_SRC_SIZE, p_open_param->pic_height << 16
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_SET_PARAM_OPTION, OPT_COMMON);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE, p_open_param->pic_height << 16
 			| p_open_param->pic_width);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MAP_ENDIAN, VDI_LITTLE_ENDIAN);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MAP_ENDIAN, VDI_LITTLE_ENDIAN);
 
 	reg_val = p_param->profile |
 		(p_param->level << 3) |
@@ -2622,7 +2476,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 			(p_param->skip_intra_trans << 25) |
 			(p_param->strong_intra_smooth_enable << 27) |
 			(p_param->en_still_picture << 30);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_SPS_PARAM, reg_val);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_SPS_PARAM, reg_val);
 
 	reg_val = (p_param->lossless_enable) |
 		(p_param->const_intra_pred_flag << 1) |
@@ -2635,12 +2489,12 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		((p_param->chroma_cr_qp_offset & 0x1F) << 19) |
 		(p_param->transform8x8_enable << 29) |
 		(p_param->entropy_coding_mode << 30);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_PPS_PARAM, reg_val);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_PPS_PARAM, reg_val);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_GOP_PARAM, p_param->gop_preset_idx);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_GOP_PARAM, p_param->gop_preset_idx);
 
 	if (inst->std == W_AVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INTRA_PARAM, p_param->intra_qp |
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INTRA_PARAM, p_param->intra_qp |
 			      ((p_param->intra_period & ENC_AVC_INTRA_IDR_PARAM_MASK)
 				<< ENC_AVC_INTRA_PERIOD_SHIFT) |
 			      ((p_param->avc_idr_period & ENC_AVC_INTRA_IDR_PARAM_MASK)
@@ -2648,7 +2502,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 			      (p_param->forced_idr_header_enable
 			       << ENC_AVC_FORCED_IDR_HEADER_SHIFT));
 	else if (inst->std == W_HEVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INTRA_PARAM,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INTRA_PARAM,
 			      p_param->decoding_refresh_type |
 			      (p_param->intra_qp << ENC_HEVC_INTRA_QP_SHIFT) |
 			      (p_param->forced_idr_header_enable
@@ -2661,17 +2515,17 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		(p_param->intra_nx_n_enable << 8) |
 		(p_param->max_num_merge << 18);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RDO_PARAM, reg_val);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RDO_PARAM, reg_val);
 
 	if (inst->std == W_AVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INTRA_REFRESH,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INTRA_REFRESH,
 			      p_param->intra_mb_refresh_arg << 16 | p_param->intra_mb_refresh_mode);
 	else if (inst->std == W_HEVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INTRA_REFRESH,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INTRA_REFRESH,
 			      p_param->intra_refresh_arg << 16 | p_param->intra_refresh_mode);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_FRAME_RATE, p_open_param->frame_rate_info);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_TARGET_RATE, p_open_param->bit_rate);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_FRAME_RATE, p_open_param->frame_rate_info);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_TARGET_RATE, p_open_param->bit_rate);
 
 	reg_val = p_open_param->rc_enable |
 		(p_param->hvs_qp_enable << 2) |
@@ -2682,56 +2536,56 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		reg_val |= (p_param->mb_level_rc_enable << 1);
 	else if (inst->std == W_HEVC_ENC)
 		reg_val |= (p_param->cu_level_rc_enable << 1);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_PARAM, reg_val);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_PARAM, reg_val);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_WEIGHT_PARAM,
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_WEIGHT_PARAM,
 		      p_param->rc_weight_buf << 8 | p_param->rc_weight_param);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_MIN_MAX_QP, p_param->min_qp_i |
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_MIN_MAX_QP, p_param->min_qp_i |
 		      (p_param->max_qp_i << 6) | (p_param->hvs_max_delta_qp << 12));
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_INTER_MIN_MAX_QP, p_param->min_qp_p |
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_INTER_MIN_MAX_QP, p_param->min_qp_p |
 		      (p_param->max_qp_p << 6) | (p_param->min_qp_b << 12) |
 		      (p_param->max_qp_b << 18));
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_BIT_RATIO_LAYER_0_3, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_RC_BIT_RATIO_LAYER_4_7, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_ROT_PARAM, rot_mir_mode);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_BIT_RATIO_LAYER_0_3, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_RC_BIT_RATIO_LAYER_4_7, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_ROT_PARAM, rot_mir_mode);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_BG_PARAM, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_LAMBDA_ADDR, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CONF_WIN_TOP_BOT,
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_BG_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_LAMBDA_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CONF_WIN_TOP_BOT,
 		      p_param->conf_win_bot << 16 | p_param->conf_win_top);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CONF_WIN_LEFT_RIGHT,
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CONF_WIN_LEFT_RIGHT,
 		      p_param->conf_win_right << 16 | p_param->conf_win_left);
 
 	if (inst->std == W_AVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INDEPENDENT_SLICE,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INDEPENDENT_SLICE,
 			      p_param->avc_slice_arg << 16 | p_param->avc_slice_mode);
 	else if (inst->std == W_HEVC_ENC)
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_INDEPENDENT_SLICE,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_INDEPENDENT_SLICE,
 			      p_param->independ_slice_mode_arg << 16 |
 			      p_param->independ_slice_mode);
 
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_USER_SCALING_LIST_ADDR, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_NUM_UNITS_IN_TICK, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_TIME_SCALE, 0);
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_NUM_TICKS_POC_DIFF_ONE, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_USER_SCALING_LIST_ADDR, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_NUM_UNITS_IN_TICK, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_TIME_SCALE, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_NUM_TICKS_POC_DIFF_ONE, 0);
 
 	if (inst->std == W_HEVC_ENC) {
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_PU04, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_PU08, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_PU16, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_PU32, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_CU08, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_CU16, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_CUSTOM_MD_CU32, 0);
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_DEPENDENT_SLICE,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_PU04, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_PU08, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_PU16, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_PU32, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_CU08, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_CU16, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_CUSTOM_MD_CU32, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_DEPENDENT_SLICE,
 			      p_param->depend_slice_mode_arg << 16 | p_param->depend_slice_mode);
 
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_NR_PARAM, 0);
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_NR_PARAM, 0);
 
-		vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_NR_WEIGHT,
+		vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_NR_WEIGHT,
 			      p_param->nr_intra_weight_y |
 			      (p_param->nr_intra_weight_cb << 5) |
 			      (p_param->nr_intra_weight_cr << 10) |
@@ -2739,14 +2593,14 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 			      (p_param->nr_inter_weight_cb << 20) |
 			      (p_param->nr_inter_weight_cr << 25));
 	}
-	vpu_write_reg(inst->dev, W5_CMD_ENC_SEQ_VUI_HRD_PARAM, 0);
+	vpu_write_reg(inst->dev, W4_CMD_ENC_SEQ_VUI_HRD_PARAM, 0);
 
 	/*
 	 * Wave4 SET_PARAM completion/status is latched on command interrupt
 	 * and consumed in enc_get_seq_info().
 	 * Avoid early RET_SUCCESS checks here.
 	 */
-	return send_firmware_command(inst, W5_ENC_SET_PARAM, false, NULL, NULL);
+	return send_firmware_command(inst, W4_ENC_SET_PARAM, false, NULL, NULL);
 }
 
 int wave4_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_info *info)
@@ -2758,11 +2612,11 @@ int wave4_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_inf
 		dev_warn(inst->dev->dev,
 			 "w4 enc seq_info failed: fail=0x%x pc=0x%x busy=0x%x host_int=0x%x vint_sts=0x%x vint_reason=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x gop=0x%x rc=0x%x enc=0x%x minmax=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] sec_axi=[0x%x+0x%x use=0x%x]\n",
 			 info->seq_init_err_reason,
-			 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC),
-			 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W5_VPU_HOST_INT_REQ),
-			 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
+			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC),
+			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
+			 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
+			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
+			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
 			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
 			 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
 			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
@@ -2878,7 +2732,7 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 		vb_mv.size = ALIGN(mv_col_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
 	}
 
-	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_mv);
+	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_mv);
 	if (ret)
 		return ret;
 
@@ -2889,7 +2743,7 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 
 	vb_fbc_y_tbl.daddr = 0;
 	vb_fbc_y_tbl.size = ALIGN(fbc_y_tbl_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
-	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_fbc_y_tbl);
+	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_fbc_y_tbl);
 	if (ret)
 		goto free_vb_fbc_y_tbl;
 
@@ -2897,7 +2751,7 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 
 	vb_fbc_c_tbl.daddr = 0;
 	vb_fbc_c_tbl.size = ALIGN(fbc_c_tbl_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
-	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_fbc_c_tbl);
+	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_fbc_c_tbl);
 	if (ret)
 		goto free_vb_fbc_c_tbl;
 
@@ -2909,7 +2763,7 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 		sub_sampled_size = WAVE5_SUBSAMPLED_ONE_SIZE(buf_width, buf_height);
 	vb_sub_sam_buf.size = ALIGN(sub_sampled_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
 	vb_sub_sam_buf.daddr = 0;
-	ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_sub_sam_buf);
+	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_sub_sam_buf);
 	if (ret)
 		goto free_vb_sam_buf;
 
@@ -2973,12 +2827,12 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
 		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
 
-		ret = send_firmware_command(inst, W5_SET_FB, false, NULL, NULL);
+		ret = send_firmware_command(inst, W4_SET_FB, false, NULL, NULL);
 		if (ret)
 			goto free_vb_mem;
 	}
 
-	ret = wave5_vpu_firmware_command_queue_error_check(vpu_dev, NULL);
+	ret = wave4_vpu_firmware_command_queue_error_check(vpu_dev, NULL);
 	if (ret)
 		goto free_vb_mem;
 	/* W4_SFB_OPTION shares W4_COMMAND_OPTION; clear it after SET_FB phase. */
@@ -2987,17 +2841,17 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	return ret;
 
 free_vb_mem:
-	wave5_vdi_free_dma_memory(vpu_dev, &vb_sub_sam_buf);
+	wave4_vdi_free_dma_memory(vpu_dev, &vb_sub_sam_buf);
 free_vb_sam_buf:
-	wave5_vdi_free_dma_memory(vpu_dev, &vb_fbc_c_tbl);
+	wave4_vdi_free_dma_memory(vpu_dev, &vb_fbc_c_tbl);
 free_vb_fbc_c_tbl:
-	wave5_vdi_free_dma_memory(vpu_dev, &vb_fbc_y_tbl);
+	wave4_vdi_free_dma_memory(vpu_dev, &vb_fbc_y_tbl);
 free_vb_fbc_y_tbl:
-	wave5_vdi_free_dma_memory(vpu_dev, &vb_mv);
+	wave4_vdi_free_dma_memory(vpu_dev, &vb_mv);
 	return ret;
 }
 
-static u32 wave5_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size)
+static u32 wave4_vpu_enc_validate_sec_axi(struct vpu_instance *inst, u32 *sec_axi_size)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct enc_open_param *p_open_param = &p_enc_info->open_param;
@@ -3077,7 +2931,7 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 		      wave4_resolve_bs_endian_nibble());
 
 	/* Secondary AXI + scratch regions are reprogrammed for ENC_PIC on Wave4. */
-	sec_axi = wave5_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
+	sec_axi = wave4_vpu_enc_validate_sec_axi(inst, &sec_axi_size);
 	sec_axi = wave4_apply_enc_sec_axi_mask(sec_axi);
 	vpu_write_reg(inst->dev, W4_ADDR_SEC_AXI, wave4_cmd_addr(inst->dev->sram_buf.daddr));
 	vpu_write_reg(inst->dev, W4_SEC_AXI_SIZE, sec_axi ? sec_axi_size : 0);
@@ -3237,7 +3091,7 @@ int wave4_vpu_encode(struct vpu_instance *inst, struct enc_param *option, u32 *f
 	 * Wave4 ENC_PIC path is asynchronous like BSP sample flow:
 	 * issue command and consume completion/report in enc_get_result().
 	 */
-	ret = send_firmware_command(inst, W5_DEC_ENC_PIC, false, &reg_val, fail_res);
+	ret = send_firmware_command(inst, W4_DEC_ENC_PIC, false, &reg_val, fail_res);
 	if (ret == -ETIMEDOUT)
 		return ret;
 
@@ -3280,10 +3134,10 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_TYPE),
 			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
 			 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-			 vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W5_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W5_VPU_VINT_REASON),
-			 vpu_read_reg(inst->dev, W5_VCPU_CUR_PC));
+			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
+			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
+			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
+			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 		return -EIO;
 	}
 	result->error_reason = 0;
@@ -3329,10 +3183,10 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 
 int wave4_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res)
 {
-	return send_firmware_command(inst, W5_DESTROY_INSTANCE, true, NULL, fail_res);
+	return send_firmware_command(inst, W4_DESTROY_INSTANCE, true, NULL, fail_res);
 }
 
-static bool wave5_vpu_enc_check_common_param_valid(struct vpu_instance *inst,
+static bool wave4_vpu_enc_check_common_param_valid(struct vpu_instance *inst,
 						   struct enc_open_param *open_param)
 {
 	bool low_delay = true;
@@ -3458,7 +3312,7 @@ invalid_refresh_argument:
 	return false;
 }
 
-static bool wave5_vpu_enc_check_param_valid(struct vpu_device *vpu_dev,
+static bool wave4_vpu_enc_check_param_valid(struct vpu_device *vpu_dev,
 					    struct enc_open_param *open_param)
 {
 	struct enc_wave_param *param = &open_param->wave_param;
@@ -3530,8 +3384,8 @@ int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_pa
 		return -EINVAL;
 	}
 
-	if (pic_width < W5_MIN_ENC_PIC_WIDTH || pic_width > W5_MAX_ENC_PIC_WIDTH ||
-	    pic_height < W5_MIN_ENC_PIC_HEIGHT || pic_height > W5_MAX_ENC_PIC_HEIGHT) {
+	if (pic_width < W4_MIN_ENC_PIC_WIDTH || pic_width > W4_MAX_ENC_PIC_WIDTH ||
+	    pic_height < W4_MIN_ENC_PIC_HEIGHT || pic_height > W4_MAX_ENC_PIC_HEIGHT) {
 		dev_err(inst->dev->dev, "Invalid encoding dimension: %ux%u\n",
 			pic_width, pic_height);
 		return -EINVAL;
@@ -3630,10 +3484,10 @@ int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_pa
 		}
 	}
 
-	if (!wave5_vpu_enc_check_common_param_valid(inst, open_param))
+	if (!wave4_vpu_enc_check_common_param_valid(inst, open_param))
 		return -EINVAL;
 
-	if (!wave5_vpu_enc_check_param_valid(inst->dev, open_param))
+	if (!wave4_vpu_enc_check_param_valid(inst->dev, open_param))
 		return -EINVAL;
 
 	if (param->chroma_cb_qp_offset < -12 || param->chroma_cb_qp_offset > 12) {

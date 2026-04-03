@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause) */
 /*
- * Wave5 series multi-standard codec IP - wave5 backend definitions
+ * Wave4 series multi-standard codec IP - wave4 backend definitions
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -23,7 +23,7 @@
 #define BSOPTION_ENABLE_EXPLICIT_END		BIT(0)
 #define BSOPTION_HIGHLIGHT_STREAM_END		BIT(1)
 /*
- * When RD_PTR_VALID_FLAG is 0 Wave515 ignores RD_PTR value and starts to
+ * When RD_PTR_VALID_FLAG is 0 Wave415 ignores RD_PTR value and starts to
  * decode from the access unit end position of the last decoded picture in
  * bitstream buffer.
  */
@@ -99,7 +99,7 @@ dma_addr_t wave4_dec_get_rd_ptr(struct vpu_instance *inst);
 
 int wave4_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr);
 
-/***< WAVE5 encoder >******/
+/***< WAVE4 encoder >******/
 
 int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 				 struct enc_open_param *open_param);
