@@ -47,125 +47,6 @@ module_param_named(w4_allow_resident_fw_fallback, wave4_allow_resident_fw_fallba
 MODULE_PARM_DESC(w4_allow_resident_fw_fallback,
 		 "Allow using already-running resident firmware when INIT_VPU times out (1=default, 0=force failure)");
 
-static u32 wave4_resolve_bs_endian_nibble(void)
-{
-	/* Keep the proven Wave4 baseline fixed: 128-bit big-endian nibble. */
-	return BITSTREAM_ENDIANNESS_BIG_ENDIAN;
-}
-
-static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
-{
-	return sec_axi;
-}
-
-static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
-{
-	return sec_axi;
-}
-
-static inline u32 wave4_cmd_addr(dma_addr_t addr)
-{
-	return (u32)addr;
-}
-
-static inline u32 wave4_bs_addr(dma_addr_t addr)
-{
-	return wave4_cmd_addr(addr);
-}
-
-static u32 wave4_bs_ptr_reg_value(dma_addr_t ptr)
-{
-	return wave4_bs_addr(ptr);
-}
-
-static u32 wave4_translate_command(u32 cmd)
-{
-	switch (cmd) {
-	case W4_INIT_VPU:
-		return W4_CMD_INIT_VPU;
-	case W4_WAKEUP_VPU:
-		/*
-		 * Wave420L BSP wake restore re-enters firmware through INIT_VPU
-		 * (after remap/reset programming) instead of WAKEUP_VPU.
-		 */
-		return W4_CMD_INIT_VPU;
-	case W4_SLEEP_VPU:
-		return W4_CMD_SLEEP_VPU;
-	case W4_CREATE_INSTANCE:
-		return W4_CMD_CREATE_INSTANCE;
-	case W4_FLUSH_INSTANCE:
-		return W4_CMD_FLUSH_DECODER;
-	case W4_DESTROY_INSTANCE:
-		return W4_CMD_FINI_SEQ;
-	case W4_INIT_SEQ:
-		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
-	case W4_SET_FB:
-		return W4_CMD_SET_FB;
-	case W4_DEC_ENC_PIC:
-		return W4_CMD_DEC_ENC_PIC;
-	case W4_ENC_SET_PARAM:
-		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
-	case W4_QUERY:
-		return W4_CMD_QUERY_DECODER;
-	default:
-		return cmd;
-	}
-}
-
-static inline u32 wave4_hw_command(struct vpu_device *vpu_dev, u32 cmd)
-{
-	(void)vpu_dev;
-	return wave4_translate_command(cmd);
-}
-
-static inline u32 wave4_dec_bs_rd_ptr_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_BS_RD_PTR;
-}
-
-static inline u32 wave4_dec_bs_wr_ptr_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_BS_WR_PTR;
-}
-
-static inline u32 wave4_dec_bs_option_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_BS_OPTION;
-}
-
-static inline u32 wave4_dec_cmd_option_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_COMMAND_OPTION;
-}
-
-static inline u32 wave4_dec_user_mask_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_CMD_DEC_USER_MASK;
-}
-
-static inline u32 wave4_dec_temp_id_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_CMD_DEC_TEMPORAL_ID_PLUS1;
-}
-
-static inline u32 wave4_dec_force_fb_latency_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_CMD_DEC_FORCE_FB_LATENCY_PLUS1;
-}
-
-static inline u32 wave4_dec_seq_change_reg(struct vpu_device *vpu_dev)
-{
-	(void)vpu_dev;
-	return W4_CMD_SEQ_CHANGE_ENABLE_FLAG;
-}
-
 static inline const char *cmd_to_str(int cmd, bool is_dec)
 {
 	switch (cmd) {
@@ -199,22 +80,6 @@ static inline const char *cmd_to_str(int cmd, bool is_dec)
 		return "W4_MAX_VPU_COMD";
 	default:
 		return "UNKNOWN";
-	}
-}
-
-static u32 wave4_codec_mode(enum wave_std std)
-{
-	switch (std) {
-	case W_HEVC_DEC:
-		return W4_CODEC_MODE_HEVC_DEC;
-	case W_HEVC_ENC:
-		return W4_CODEC_MODE_HEVC_ENC;
-	case W_AVC_DEC:
-		return W4_CODEC_MODE_AVC_DEC;
-	case W_AVC_ENC:
-		return W4_CODEC_MODE_AVC_ENC;
-	default:
-		return std;
 	}
 }
 
@@ -430,6 +295,141 @@ unsigned int wave4_vpu_get_product_id(struct vpu_device *vpu_dev)
 	dev_err(vpu_dev->dev, "Unexpected product id (%x), expected Wave4\n", val);
 
 	return PRODUCT_ID_NONE;
+}
+
+static u32 wave4_resolve_bs_endian_nibble(void)
+{
+	/* Keep the proven Wave4 baseline fixed: 128-bit big-endian nibble. */
+	return BITSTREAM_ENDIANNESS_BIG_ENDIAN;
+}
+
+static u32 wave4_apply_dec_sec_axi_mask(u32 sec_axi)
+{
+	return sec_axi;
+}
+
+static u32 wave4_apply_enc_sec_axi_mask(u32 sec_axi)
+{
+	return sec_axi;
+}
+
+static inline u32 wave4_cmd_addr(dma_addr_t addr)
+{
+	return (u32)addr;
+}
+
+static inline u32 wave4_bs_addr(dma_addr_t addr)
+{
+	return wave4_cmd_addr(addr);
+}
+
+static u32 wave4_bs_ptr_reg_value(dma_addr_t ptr)
+{
+	return wave4_bs_addr(ptr);
+}
+
+static u32 wave4_translate_command(u32 cmd)
+{
+	switch (cmd) {
+	case W4_INIT_VPU:
+		return W4_CMD_INIT_VPU;
+	case W4_WAKEUP_VPU:
+		/*
+		 * Wave420L BSP wake restore re-enters firmware through INIT_VPU
+		 * (after remap/reset programming) instead of WAKEUP_VPU.
+		 */
+		return W4_CMD_INIT_VPU;
+	case W4_SLEEP_VPU:
+		return W4_CMD_SLEEP_VPU;
+	case W4_CREATE_INSTANCE:
+		return W4_CMD_CREATE_INSTANCE;
+	case W4_FLUSH_INSTANCE:
+		return W4_CMD_FLUSH_DECODER;
+	case W4_DESTROY_INSTANCE:
+		return W4_CMD_FINI_SEQ;
+	case W4_INIT_SEQ:
+		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
+	case W4_SET_FB:
+		return W4_CMD_SET_FB;
+	case W4_DEC_ENC_PIC:
+		return W4_CMD_DEC_ENC_PIC;
+	case W4_ENC_SET_PARAM:
+		return W4_CMD_DEC_PIC_HDR_SET_PARAM;
+	case W4_QUERY:
+		return W4_CMD_QUERY_DECODER;
+	default:
+		return cmd;
+	}
+}
+
+static inline u32 wave4_hw_command(struct vpu_device *vpu_dev, u32 cmd)
+{
+	(void)vpu_dev;
+	return wave4_translate_command(cmd);
+}
+
+static inline u32 wave4_dec_bs_rd_ptr_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_BS_RD_PTR;
+}
+
+static inline u32 wave4_dec_bs_wr_ptr_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_BS_WR_PTR;
+}
+
+static inline u32 wave4_dec_bs_option_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_BS_OPTION;
+}
+
+static inline u32 wave4_dec_cmd_option_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_COMMAND_OPTION;
+}
+
+static inline u32 wave4_dec_user_mask_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_CMD_DEC_USER_MASK;
+}
+
+static inline u32 wave4_dec_temp_id_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_CMD_DEC_TEMPORAL_ID_PLUS1;
+}
+
+static inline u32 wave4_dec_force_fb_latency_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_CMD_DEC_FORCE_FB_LATENCY_PLUS1;
+}
+
+static inline u32 wave4_dec_seq_change_reg(struct vpu_device *vpu_dev)
+{
+	(void)vpu_dev;
+	return W4_CMD_SEQ_CHANGE_ENABLE_FLAG;
+}
+
+static u32 wave4_codec_mode(enum wave_std std)
+{
+	switch (std) {
+	case W_HEVC_DEC:
+		return W4_CODEC_MODE_HEVC_DEC;
+	case W_HEVC_ENC:
+		return W4_CODEC_MODE_HEVC_ENC;
+	case W_AVC_DEC:
+		return W4_CODEC_MODE_AVC_DEC;
+	case W_AVC_ENC:
+		return W4_CODEC_MODE_AVC_ENC;
+	default:
+		return std;
+	}
 }
 
 static void wave4_bit_issue_command(struct vpu_device *vpu_dev, struct vpu_instance *inst, u32 cmd)

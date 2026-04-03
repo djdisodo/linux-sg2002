@@ -334,6 +334,56 @@ static int wave4_vpu_load_firmware(struct device *dev, const char *fw_name,
 	return 0;
 }
 
+static __maybe_unused int wave4_pm_suspend(struct device *dev)
+{
+	struct vpu_device *vpu = dev_get_drvdata(dev);
+
+	if (w4_forbid_runtime_pm)
+		return 0;
+
+	if (pm_runtime_suspended(dev))
+		return 0;
+
+	if (vpu->irq < 0)
+		hrtimer_cancel(&vpu->hrtimer);
+
+	wave4_vpu_sleep_wake(dev, true, NULL, 0);
+	clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
+
+	return 0;
+}
+
+static __maybe_unused int wave4_pm_resume(struct device *dev)
+{
+	struct vpu_device *vpu = dev_get_drvdata(dev);
+	int ret = 0;
+
+	if (w4_forbid_runtime_pm)
+		return 0;
+
+	ret = clk_bulk_prepare_enable(vpu->num_clks, vpu->clks);
+	if (ret) {
+		dev_err(dev, "Enabling clocks, fail: %d\n", ret);
+		return ret;
+	}
+
+	ret = wave4_vpu_sleep_wake(dev, false, NULL, 0);
+	if (ret) {
+		clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
+		return ret;
+	}
+
+	if (vpu->irq < 0 && !hrtimer_active(&vpu->hrtimer))
+		hrtimer_start(&vpu->hrtimer, ns_to_ktime(vpu->vpu_poll_interval * NSEC_PER_MSEC),
+			      HRTIMER_MODE_REL_PINNED);
+
+	return ret;
+}
+
+static const struct dev_pm_ops wave4_pm_ops = {
+	SET_RUNTIME_PM_OPS(wave4_pm_suspend, wave4_pm_resume, NULL)
+};
+
 static void wave4_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 {
 	struct regmap *syscon;
@@ -362,7 +412,7 @@ static void wave4_vpu_configure_sg2002_sram_share(struct platform_device *pdev)
 	if (ret)
 		dev_warn(&pdev->dev, "failed to configure VC SRAM share mux: %d\n", ret);
 
-	program_vc_ctrl_direct:
+program_vc_ctrl_direct:
 	/*
 	 * BSP programs VC SRAM mux in the dedicated VC control window:
 	 *   base 0x0B030000, offset 0x24, value 0x2 for H265(Wave4).
@@ -394,7 +444,6 @@ static void wave4_vpu_configure_sg2002_dram_remap(struct platform_device *pdev)
 	int ret;
 
 	/* Match BSP behavior: enable DRAM 32..35 remap window for VCODEC accesses. */
-
 	if (of_find_property(pdev->dev.of_node, "sophgo,syscon", NULL)) {
 		syscon = syscon_regmap_lookup_by_phandle(pdev->dev.of_node, "sophgo,syscon");
 		if (IS_ERR(syscon)) {
@@ -447,56 +496,6 @@ program_direct:
 	else
 		dev_info(&pdev->dev, "enabled DRAM remap bit24 for VCODEC (reg=0x%x)\n", val);
 }
-
-static __maybe_unused int wave4_pm_suspend(struct device *dev)
-{
-	struct vpu_device *vpu = dev_get_drvdata(dev);
-
-	if (w4_forbid_runtime_pm)
-		return 0;
-
-	if (pm_runtime_suspended(dev))
-		return 0;
-
-	if (vpu->irq < 0)
-		hrtimer_cancel(&vpu->hrtimer);
-
-	wave4_vpu_sleep_wake(dev, true, NULL, 0);
-	clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
-
-	return 0;
-}
-
-static __maybe_unused int wave4_pm_resume(struct device *dev)
-{
-	struct vpu_device *vpu = dev_get_drvdata(dev);
-	int ret = 0;
-
-	if (w4_forbid_runtime_pm)
-		return 0;
-
-	ret = clk_bulk_prepare_enable(vpu->num_clks, vpu->clks);
-	if (ret) {
-		dev_err(dev, "Enabling clocks, fail: %d\n", ret);
-		return ret;
-	}
-
-	ret = wave4_vpu_sleep_wake(dev, false, NULL, 0);
-	if (ret) {
-		clk_bulk_disable_unprepare(vpu->num_clks, vpu->clks);
-		return ret;
-	}
-
-	if (vpu->irq < 0 && !hrtimer_active(&vpu->hrtimer))
-		hrtimer_start(&vpu->hrtimer, ns_to_ktime(vpu->vpu_poll_interval * NSEC_PER_MSEC),
-			      HRTIMER_MODE_REL_PINNED);
-
-	return ret;
-}
-
-static const struct dev_pm_ops wave4_pm_ops = {
-	SET_RUNTIME_PM_OPS(wave4_pm_suspend, wave4_pm_resume, NULL)
-};
 
 static int wave4_vpu_probe(struct platform_device *pdev)
 {
