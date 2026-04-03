@@ -700,11 +700,14 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 
 	/*
 	 * SET_PARAM is interrupt-driven in Wave4 BSP, but our IRQ handler can
-	 * consume/clear VINT before this synchronous path polls it. Accept BUSY
-	 * deassertion as a completion fallback to avoid false timeouts.
+	 * consume/clear VINT before this synchronous path polls it.
+	 *
+	 * Do not treat a seen VINT reason as completion by itself: unrelated or
+	 * stale interrupt reasons can be observed while the command is still
+	 * running. Completion is defined by BUSY deassertion.
 	 */
 	if (cmd == W5_ENC_SET_PARAM) {
-		bool completed_via_busy = false;
+		bool saw_irq_reason = false;
 
 		start = ktime_get();
 		for (;;) {
@@ -719,14 +722,12 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 				if (clear_reason)
 					vpu_write_reg(inst->dev, W5_VPU_VINT_REASON_CLR, clear_reason);
 				vpu_write_reg(inst->dev, W5_VPU_VINT_CLEAR, 0x1);
-				break;
+				saw_irq_reason = true;
 			}
 
 			busy_now = vpu_read_reg(inst->dev, W5_VPU_BUSY_STATUS);
-			if (!busy_now) {
-				completed_via_busy = true;
+			if (!busy_now)
 				break;
-			}
 
 			if (ktime_to_us(ktime_sub(ktime_get(), start)) > VPU_BUSY_CHECK_TIMEOUT) {
 				dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
@@ -751,9 +752,9 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 			usleep_range(500, 1000);
 		}
 
-		if (completed_via_busy) {
+		if (!saw_irq_reason) {
 			dev_dbg(inst->dev->dev,
-				"%s: cmd '%s' completed via BUSY fallback (reason already consumed)\n",
+				"%s: cmd '%s' completed with BUSY deassertion and no observable VINT reason\n",
 				__func__, cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 		}
 
