@@ -194,6 +194,15 @@ static irqreturn_t wave5_vpu_irq_thread(int irq, void *dev_id)
 			if (!ret)
 				break;
 
+			/*
+			 * Encoder sync mode completes ENC_PIC in device_run.
+			 * In that mode no async PM ref is held, so queued PIC
+			 * IRQ callbacks are stale duplicates and must be ignored.
+			 */
+			if (inst->type == VPU_INST_TYPE_ENC &&
+			    !READ_ONCE(inst->codec_info->enc_info.async_pm_ref_held))
+				continue;
+
 			inst->ops->finish_process(inst);
 		}
 	}
@@ -240,6 +249,14 @@ static int irq_thread(void *data)
 				ret = kfifo_out(&inst->irq_status, &irq_status, sizeof(int));
 				if (!ret)
 					break;
+
+				/*
+				 * Encoder sync mode completes ENC_PIC in device_run.
+				 * Skip duplicate PIC completions from the IRQ queue.
+				 */
+				if (inst->type == VPU_INST_TYPE_ENC &&
+				    !READ_ONCE(inst->codec_info->enc_info.async_pm_ref_held))
+					continue;
 
 				inst->ops->finish_process(inst);
 			}
