@@ -538,11 +538,8 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&dev->instances);
 
 	dev->irq = platform_get_irq(pdev, 0);
-	if (match_data->force_polling_backend && dev->irq >= 0) {
-		dev_warn(&pdev->dev,
-			 "forcing polling backend for Wave420L platform\n");
+	if (match_data->force_polling_backend && dev->irq >= 0)
 		dev->irq = -1;
-	}
 	if (READ_ONCE(wave4_poll_mode))
 		dev->irq = -1;
 	if (dev->irq < 0) {
@@ -607,8 +604,6 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "wave4_vpu_dec_register_device, fail: %d\n", ret);
 			goto err_v4l2_unregister;
 		}
-	} else {
-		dev_info(&pdev->dev, "capability: decoder disabled, skip decoder registration\n");
 	}
 	if (dev->has_encoder) {
 		dev_info(&pdev->dev, "capability: registering encoder device\n");
