@@ -32,10 +32,6 @@
 #define SG2002_VC_SRAM_SHARE_H265	0x2
 #define SG2002_VC_CTRL_BASE		0x0B030000
 #define SG2002_VC_CTRL_SIZE		0x100
-#define SG2002_DRAM_32_35_REG_BASE	0x03000064
-#define SG2002_DRAM_32_35_REG_SIZE	0x4
-#define SG2002_DRAM_32_35_EN_BIT	BIT(24)
-#define SG2002_TOP_SYSCON_DDR_REMAP_OFFSET	0x64
 #define W4_INT_SET_PARAM_SEQ		BIT(1)
 #define W4_INT_PIC_RUN			BIT(3)
 #define W4_INT_QUERY			BIT(9)
@@ -436,67 +432,6 @@ program_vc_ctrl_direct:
 		dev_info(&pdev->dev, "configured VC SRAM share mux to H265 path (reg=0x%x)\n", val);
 }
 
-static void wave4_vpu_configure_sg2002_dram_remap(struct platform_device *pdev)
-{
-	struct regmap *syscon;
-	void __iomem *dram_remap;
-	u32 val;
-	int ret;
-
-	/* Match BSP behavior: enable DRAM 32..35 remap window for VCODEC accesses. */
-	if (of_find_property(pdev->dev.of_node, "sophgo,syscon", NULL)) {
-		syscon = syscon_regmap_lookup_by_phandle(pdev->dev.of_node, "sophgo,syscon");
-		if (IS_ERR(syscon)) {
-			dev_warn(&pdev->dev, "failed to lookup sophgo,syscon for DRAM remap: %ld\n",
-				 PTR_ERR(syscon));
-			goto program_direct;
-		}
-	} else {
-		syscon = syscon_regmap_lookup_by_compatible("sophgo,cv1800b-top-syscon");
-		if (IS_ERR(syscon)) {
-			dev_warn(&pdev->dev, "failed to lookup top syscon for DRAM remap: %ld\n",
-				 PTR_ERR(syscon));
-			goto program_direct;
-		}
-	}
-
-	ret = regmap_update_bits(syscon, SG2002_TOP_SYSCON_DDR_REMAP_OFFSET,
-				 SG2002_DRAM_32_35_EN_BIT, SG2002_DRAM_32_35_EN_BIT);
-	if (ret) {
-		dev_warn(&pdev->dev, "failed to set DRAM remap bit24 via syscon: %d\n", ret);
-		goto program_direct;
-	}
-
-	ret = regmap_read(syscon, SG2002_TOP_SYSCON_DDR_REMAP_OFFSET, &val);
-	if (ret) {
-		dev_warn(&pdev->dev, "failed to read back DRAM remap register: %d\n", ret);
-		goto program_direct;
-	}
-	if (val & SG2002_DRAM_32_35_EN_BIT) {
-		dev_info(&pdev->dev, "enabled DRAM remap bit24 via syscon (reg=0x%x)\n", val);
-		return;
-	}
-	dev_warn(&pdev->dev, "DRAM remap syscon verify failed: reg=0x%x\n", val);
-
-program_direct:
-	dram_remap = devm_ioremap(&pdev->dev, SG2002_DRAM_32_35_REG_BASE,
-				  SG2002_DRAM_32_35_REG_SIZE);
-	if (IS_ERR(dram_remap)) {
-		dev_warn(&pdev->dev, "failed to ioremap DRAM remap @0x%x: %ld\n",
-			 SG2002_DRAM_32_35_REG_BASE, PTR_ERR(dram_remap));
-		return;
-	}
-
-	val = readl(dram_remap);
-	val |= SG2002_DRAM_32_35_EN_BIT;
-	writel(val, dram_remap);
-	val = readl(dram_remap);
-	if (!(val & SG2002_DRAM_32_35_EN_BIT))
-		dev_warn(&pdev->dev, "DRAM remap enable verify failed: reg=0x%x\n", val);
-	else
-		dev_info(&pdev->dev, "enabled DRAM remap bit24 for VCODEC (reg=0x%x)\n", val);
-}
-
 static int wave4_vpu_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -576,7 +511,6 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 		goto err_reset_assert;
 	}
 
-	wave4_vpu_configure_sg2002_dram_remap(pdev);
 	wave4_vpu_configure_sg2002_sram_share(pdev);
 
 	dev->sram_size = match_data->sram_size;
