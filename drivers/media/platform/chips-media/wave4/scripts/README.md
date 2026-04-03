@@ -22,6 +22,29 @@ Override using script options or environment variables:
 - `w4_run_case.sh`: run one case (default `encode`, optional deploy + reload + v4l2 + logs).
 - `w4_matrix_smoke.sh`: run a small preset matrix of candidate module params.
 
+## C Throughput Bench (Single MMAP Reuse)
+
+For low-overhead encode-path measurements, use:
+
+- `tools/w4_dmabuf_reuse_bench.c`
+
+It allocates OUTPUT MMAP buffers and repeatedly re-queues dequeued OUTPUT
+indices for all frames, while draining CAPTURE bitstream buffers.
+
+Example on target:
+
+```bash
+gcc -O2 -Wall -Wextra -std=gnu11 -o /root/w4_dmabuf_reuse_bench \
+  /root/wave4-dev/drivers/media/platform/chips-media/wave4/tools/w4_dmabuf_reuse_bench.c
+
+/root/w4_dmabuf_reuse_bench \
+  --device /dev/video0 \
+  --width 1920 --height 1088 \
+  --out-bufs 2 --cap-bufs 4 \
+  --frames 120 --fps 30 \
+  --output /root/dmabuf_reuse.hevc
+```
+
 ## Typical Usage
 
 Build:
