@@ -1570,8 +1570,6 @@ static int initialize_sequence(struct vpu_instance *inst)
 	 */
 	if (!inst->bitstream_vbuf.size) {
 		inst->bitstream_vbuf.size = W4_ENC_SETUP_BS_SIZE;
-		dev_dbg(inst->dev->dev, "enc setup bitstream ring size: %zu bytes\n",
-			inst->bitstream_vbuf.size);
 		ret = wave4_vdi_allocate_dma_memory(inst->dev, &inst->bitstream_vbuf);
 		if (ret) {
 			memset(&inst->bitstream_vbuf, 0, sizeof(inst->bitstream_vbuf));
@@ -1594,20 +1592,11 @@ static int initialize_sequence(struct vpu_instance *inst)
 		return ret;
 	}
 
-	if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0) {
-		dev_warn(inst->dev->dev,
-			 "%s: w4 interrupt timeout, falling back to direct result polling\n",
-			 __func__);
-	}
+	(void)wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT);
 
 	ret = wave4_vpu_enc_complete_seq_init(inst, &initial_info);
 	if (ret)
 		return ret;
-
-	dev_info(inst->dev->dev,
-		 "enc seq_init: min_frame_buffer=%u min_source_buffer=%u\n",
-		 initial_info.min_frame_buffer_count,
-		 initial_info.min_src_frame_count);
 
 	/*
 	 * Some Wave420L runs report zero here even after successful SET_PARAM.
@@ -1615,13 +1604,9 @@ static int initialize_sequence(struct vpu_instance *inst)
 	 * surface the next failure point.
 	 */
 	if (!initial_info.min_frame_buffer_count) {
-		dev_warn(inst->dev->dev,
-			 "enc seq_init returned min_frame_buffer_count=0, forcing 2\n");
 		initial_info.min_frame_buffer_count = 2;
 	}
 	if (!initial_info.min_src_frame_count) {
-		dev_warn(inst->dev->dev,
-			 "enc seq_init returned min_src_frame_count=0, forcing 1\n");
 		initial_info.min_src_frame_count = 1;
 	}
 
@@ -1860,9 +1845,6 @@ static void wave4_vpu_enc_stop_streaming(struct vb2_queue *q)
 	dev_dbg(inst->dev->dev, "%s: type: %u\n", __func__, q->type);
 	ret = pm_runtime_resume_and_get(inst->dev->dev);
 	if (ret < 0) {
-		dev_warn(inst->dev->dev,
-			 "%s: pm_runtime_resume_and_get failed: %d, forcing buffer cleanup only\n",
-			 __func__, ret);
 		wave4_vpu_enc_put_async_pm(inst);
 		if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 			streamoff_output(inst, q);
@@ -1948,18 +1930,8 @@ static void wave4_vpu_enc_device_run(void *priv)
 	u32 fail_res = 0;
 	int ret;
 
-	dev_dbg(inst->dev->dev,
-		"%s: enter state=%s src_ready=%u dst_ready=%u draining=%d\n",
-		__func__, state_to_str(inst->state),
-		v4l2_m2m_num_src_bufs_ready(m2m_ctx),
-		v4l2_m2m_num_dst_bufs_ready(m2m_ctx),
-		m2m_ctx->is_draining);
-
 	ret = pm_runtime_resume_and_get(inst->dev->dev);
 	if (ret < 0) {
-		dev_warn(inst->dev->dev,
-			 "%s: pm_runtime_resume_and_get failed: %d\n",
-			 __func__, ret);
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 		return;
 	}
@@ -1976,9 +1948,7 @@ static void wave4_vpu_enc_device_run(void *priv)
 			break;
 		}
 		if (READ_ONCE(wave4_sync_enc_pic_done)) {
-			if (wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT) < 0)
-				dev_warn(inst->dev->dev,
-					 "w4 ENC_PIC wait timeout in sync mode, attempting finish path anyway\n");
+			(void)wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT);
 			inst->ops->finish_process(inst);
 			dev_dbg(inst->dev->dev, "%s: leave after synchronous finish", __func__);
 			pm_runtime_put_autosuspend(inst->dev->dev);

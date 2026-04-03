@@ -111,18 +111,6 @@ int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 		}
 	}
 
-	int_sts = wave4_vdi_read_register(inst->dev, W4_VPU_VPU_INT_STS);
-	reason = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON);
-	reason_usr = wave4_vdi_read_register(inst->dev, W4_VPU_VINT_REASON_USR);
-	dev_warn(inst->dev->dev,
-		 "w4 wait_interrupt timeout: busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x ret_success=0x%x ret_fail=0x%x cmd=0x%x vcpu_pc=0x%x\n",
-		 wave4_vdi_read_register(inst->dev, W4_VPU_BUSY_STATUS),
-		 int_sts, reason, reason_usr,
-		 wave4_vdi_read_register(inst->dev, W4_RET_SUCCESS),
-		 wave4_vdi_read_register(inst->dev, W4_RET_FAIL_REASON),
-		 wave4_vdi_read_register(inst->dev, W4_COMMAND),
-		 wave4_vdi_read_register(inst->dev, W4_VCPU_CUR_PC));
-
 	return -ETIMEDOUT;
 }
 

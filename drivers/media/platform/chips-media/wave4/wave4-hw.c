@@ -157,23 +157,6 @@ static int wave4_wait_fio_readl(struct vpu_device *vpu_dev, u32 addr, u32 val)
 	return -ETIMEDOUT;
 }
 
-static u32 wave4_fio_readl(struct vpu_device *vpu_dev, unsigned int addr)
-{
-	unsigned int ctrl;
-	int ret;
-
-	ctrl = FIELD_GET(FASTIO_ADDRESS_MASK, addr);
-	wave4_vdi_write_register(vpu_dev, W4_VPU_FIO_CTRL_ADDR, ctrl);
-	ret = read_poll_timeout(wave4_vdi_read_register, ctrl, ctrl & FIO_CTRL_READY, 0,
-				FIO_TIMEOUT, false, vpu_dev, W4_VPU_FIO_CTRL_ADDR);
-	if (ret) {
-		dev_warn_ratelimited(vpu_dev->dev, "FIO read timeout: addr=0x%x\n", addr);
-		return 0;
-	}
-
-	return wave4_vdi_read_register(vpu_dev, W4_VPU_FIO_DATA);
-}
-
 static void wave4_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsigned int data)
 {
 	int ret;
@@ -188,73 +171,6 @@ static void wave4_fio_writel(struct vpu_device *vpu_dev, unsigned int addr, unsi
 	if (ret)
 		dev_dbg_ratelimited(vpu_dev->dev, "FIO write timeout: addr=0x%x data=%x\n",
 				    ctrl, data);
-}
-
-#undef W4_DBG_INFO_CTRL_ADDR
-#define W4_DBG_INFO_CTRL_ADDR	0x8074
-#undef W4_DBG_INFO_DATA_ADDR
-#define W4_DBG_INFO_DATA_ADDR	0x8078
-#undef W4_DBG_INFO_READY_ADDR
-#define W4_DBG_INFO_READY_ADDR	0x807c
-
-struct wave4_dbg_probe {
-	u16 idx;
-	const char *name;
-};
-
-static bool wave4_read_dbg_probe(struct vpu_device *vpu_dev, u16 idx, u32 *value)
-{
-	u32 ready;
-	int ret;
-
-	wave4_fio_writel(vpu_dev, W4_DBG_INFO_CTRL_ADDR, BIT(20) | BIT(16) | idx);
-	ret = read_poll_timeout(wave4_fio_readl, ready, ready & BIT(0), 0, FIO_TIMEOUT,
-				false, vpu_dev, W4_DBG_INFO_READY_ADDR);
-	if (ret)
-		return false;
-
-	*value = wave4_fio_readl(vpu_dev, W4_DBG_INFO_DATA_ADDR);
-	return true;
-}
-
-static void wave4_dump_dbg_probes(struct vpu_instance *inst)
-{
-	/*
-	 * BSP sample/debug code probes these decoder internals through
-	 * CDBG_INFO_CONTROL/DATA/READY (0x8074/0x8078/0x807c).
-	 * Keep these logs to cross-check parser/SDMA state against BSP.
-	 */
-	static const struct wave4_dbg_probe probes[] = {
-		{ 0x120, "sdma_load_cmd" },
-		{ 0x121, "sdma_auro_mode" },
-		{ 0x122, "sdma_base_addr" },
-		{ 0x123, "sdma_enc_addr" },
-		{ 0x124, "sdma_endian" },
-		{ 0x126, "sdma_busy" },
-		{ 0x127, "sdma_last_addr" },
-		{ 0x129, "sdma_rd_sel" },
-		{ 0x130, "sdma_wr_sel" },
-		{ 0x13b, "gdi_err_pri3_0" },
-		{ 0x13c, "gdi_err_pri0_2d" },
-		{ 0x143, "shu_status" },
-		{ 0x14c, "shu_sbyte_low" },
-		{ 0x14d, "shu_sbyte_high" },
-	};
-	u32 value;
-	size_t i;
-
-	for (i = 0; i < ARRAY_SIZE(probes); i++) {
-		if (!wave4_read_dbg_probe(inst->dev, probes[i].idx, &value)) {
-			dev_warn(inst->dev->dev,
-				 "w4 dbg probe timeout: %s[0x%x]\n",
-				 probes[i].name, probes[i].idx);
-			continue;
-		}
-
-		dev_warn(inst->dev->dev,
-			 "w4 dbg probe: %s[0x%x]=0x%x\n",
-			 probes[i].name, probes[i].idx, value);
-	}
 }
 
 static int wave4_wait_bus_busy(struct vpu_device *vpu_dev, unsigned int addr)
@@ -488,17 +404,6 @@ static int wave4_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 			return 0;
 		}
 
-		dev_warn(dev->dev,
-			 "%s: queue check failed: reason=0x%x cmd=0x%x inst=0x%x cmd_opt=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
-			 __func__, reason,
-			 vpu_read_reg(dev, W4_COMMAND),
-			 vpu_read_reg(dev, W4_INST_INDEX),
-			 vpu_read_reg(dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(dev, W4_VPU_BUSY_STATUS),
-			 vpu_read_reg(dev, W4_VPU_VPU_INT_STS),
-			 vpu_read_reg(dev, W4_VPU_VINT_REASON),
-			 vpu_read_reg(dev, W4_VPU_VINT_REASON_USR),
-			 vpu_read_reg(dev, W4_VCPU_CUR_PC));
 		PRINT_REG_ERR(dev, reason);
 
 		if (fail_res)
@@ -545,8 +450,6 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 	 * running. Completion is defined by BUSY deassertion.
 	 */
 	if (cmd == W4_ENC_SET_PARAM) {
-		bool saw_irq_reason = false;
-
 		start = ktime_get();
 		for (;;) {
 			u32 busy_now;
@@ -560,7 +463,6 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 				if (clear_reason)
 					vpu_write_reg(inst->dev, W4_VPU_VINT_REASON_CLR, clear_reason);
 				vpu_write_reg(inst->dev, W4_VPU_VINT_CLEAR, 0x1);
-				saw_irq_reason = true;
 			}
 
 			busy_now = vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS);
@@ -570,30 +472,10 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 			if (ktime_to_us(ktime_sub(ktime_get(), start)) > VPU_BUSY_CHECK_TIMEOUT) {
 				dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
 					 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
-				dev_warn(inst->dev->dev,
-					 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_en=0x%x vint_sts=0x%x vint_reason=0x%x vint_reason_usr=0x%x vcpu_pc=0x%x\n",
-					 vpu_read_reg(inst->dev, W4_COMMAND),
-					 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
-					 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
-					 vpu_read_reg(inst->dev, W4_RET_SUCCESS),
-					 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-					 vpu_read_reg(inst->dev, W4_INST_INDEX),
-					 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-					 vpu_read_reg(inst->dev, W4_VPU_VINT_ENABLE),
-					 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
-					 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
-					 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON_USR),
-					 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 				return -ETIMEDOUT;
 			}
 
 			usleep_range(500, 1000);
-		}
-
-		if (!saw_irq_reason) {
-			dev_dbg(inst->dev->dev,
-				"%s: cmd '%s' completed with BUSY deassertion and no observable VINT reason\n",
-				__func__, cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
 		}
 
 		if (queue_status)
@@ -602,35 +484,13 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 		if (!check_success)
 			return 0;
 
-		ret = wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
-		if (ret) {
-			dev_warn(inst->dev->dev,
-				 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
-				 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
-				 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-				 vpu_read_reg(inst->dev, W4_COMMAND),
-				 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-				 vpu_read_reg(inst->dev, W4_INST_INDEX));
-		}
-		return ret;
+		return wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
 	}
 
 	ret = wave4_wait_vpu_busy(inst->dev, W4_VPU_BUSY_STATUS);
 	if (ret) {
 		dev_warn(inst->dev->dev, "%s: command: '%s', timed out\n", __func__,
 			 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC));
-		dev_warn(inst->dev->dev,
-			 "w4 timeout debug: cmd_reg=0x%x busy=0x%x host_int=0x%x ret_success=0x%x ret_fail=0x%x inst_idx=0x%x cmd_opt=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			 vpu_read_reg(inst->dev, W4_COMMAND),
-			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
-			 vpu_read_reg(inst->dev, W4_RET_SUCCESS),
-			 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-			 vpu_read_reg(inst->dev, W4_INST_INDEX),
-			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
-			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 		return -ETIMEDOUT;
 	}
 
@@ -643,17 +503,7 @@ static int send_firmware_command(struct vpu_instance *inst, u32 cmd, bool check_
 	if (!check_success)
 		return 0;
 
-	ret = wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
-	if (ret) {
-		dev_warn(inst->dev->dev,
-			 "w4 cmd '%s' failed: ret=%d fail=0x%x hw_cmd=0x%x cmd_opt=0x%x inst_idx=0x%x\n",
-			 cmd_to_str(cmd, inst->type == VPU_INST_TYPE_DEC), ret,
-			 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-			 vpu_read_reg(inst->dev, W4_COMMAND),
-			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(inst->dev, W4_INST_INDEX));
-	}
-	return ret;
+	return wave4_vpu_firmware_command_queue_error_check(inst->dev, fail_result);
 }
 
 static int wave4_send_query(struct vpu_device *vpu_dev, struct vpu_instance *inst,
@@ -701,13 +551,6 @@ static int wave4_get_fw_version(struct vpu_device *vpu_dev, u32 *revision)
 	}
 
 	if (!vpu_read_reg(vpu_dev, W4_RET_SUCCESS)) {
-		dev_warn(vpu_dev->dev,
-			 "w4 GET_FW_VERSION fail: ret_success=0 fail_reason=0x%x cmd=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			 vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-			 vpu_read_reg(vpu_dev, W4_COMMAND),
-			 vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
-			 vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
-			 vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
 		vpu_write_reg(vpu_dev, W4_VPU_BUSY_STATUS, 0);
 		return -EIO;
 	}
@@ -983,14 +826,7 @@ int wave4_vpu_build_up_dec_param(struct vpu_instance *inst,
 	/*
 	 * Follow Wave4 flow and require RET_SUCCESS after CREATE_INSTANCE.
 	 */
-	{
-		u32 fail_res = 0;
-
-		ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, &fail_res);
-		if (ret)
-			dev_warn(inst->dev->dev, "w4 dec create_instance failed: %d (fail=0x%x)\n",
-				 ret, fail_res);
-	}
+	ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, NULL);
 	if (ret) {
 		wave4_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
 		return ret;
@@ -1207,77 +1043,14 @@ int wave4_vpu_dec_get_seq_info(struct vpu_instance *inst, struct dec_initial_inf
 
 	dev_dbg(inst->dev->dev, "%s: init seq complete (queue %u : %u)\n", __func__,
 		p_dec_info->instance_queue_count, p_dec_info->report_queue_count);
-	dev_dbg(inst->dev->dev,
-		"%s: seq regs succ=0x%x fail=0x%x err_w4=0x%x err_w5=0x%x pic_w4=0x%x pic_w5=0x%x bs_start=0x%x bs_size=0x%x bs_param=0x%x bs_opt=0x%x bs_rd=0x%x bs_wr=0x%x ret_rd=0x%x\n",
-		__func__,
-		vpu_read_reg(inst->dev, W4_RET_SUCCESS),
-		vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-		vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO),
-		vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO),
-		vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE),
-		vpu_read_reg(inst->dev, W4_RET_DEC_PIC_SIZE),
-		vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-		vpu_read_reg(inst->dev, W4_BS_SIZE),
-		vpu_read_reg(inst->dev, W4_BS_PARAM),
-		vpu_read_reg(inst->dev, W4_BS_OPTION),
-		vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-		vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-		vpu_read_reg(inst->dev, W4_RET_DEC_BS_RD_PTR));
 
 	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
 		u32 fail_reason;
 		u32 dec_err;
-		u32 dec_err_w5;
-		u32 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end;
-
-		/* Keep this explicit cross-bank dump for Wave4/Wave4 err-info parity checks. */
-		dec_err_w5 = vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO);
-		dev_warn(inst->dev->dev,
-			 "w4 seq-fail err banks: err_w4=0x%x err_w5=0x%x\n",
-			 vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO), dec_err_w5);
-
-		fio_bs_data = wave4_fio_readl(inst->dev, 0x8064);
-		fio_bus_busy = wave4_fio_readl(inst->dev, 0x8068);
-		fio_bit_pc = wave4_fio_readl(inst->dev, 0x8018);
-		fio_bs_start = wave4_fio_readl(inst->dev, 0x811c);
-		fio_bs_end = wave4_fio_readl(inst->dev, 0x8120);
-			dev_warn(inst->dev->dev,
-				 "w4 fio debug: bs_data=0x%x bus_busy=0x%x bit_pc=0x%x bs_start=0x%x bs_end=0x%x\n",
-				 fio_bs_data, fio_bus_busy, fio_bit_pc, fio_bs_start, fio_bs_end);
-			wave4_dump_dbg_probes(inst);
-			if (inst->bitstream_vbuf.vaddr && p_dec_info->stream_buf_size) {
-				dma_addr_t bs_rd = vpu_read_reg(inst->dev, W4_BS_RD_PTR);
-				size_t rd_off = 0;
-				size_t dump_len;
-			u8 *ring = inst->bitstream_vbuf.vaddr;
-
-			if (bs_rd >= p_dec_info->stream_buf_start_addr &&
-			    bs_rd < p_dec_info->stream_buf_end_addr)
-				rd_off = bs_rd - p_dec_info->stream_buf_start_addr;
-			else if (bs_rd <= p_dec_info->stream_buf_size - 1)
-				rd_off = bs_rd;
-
-			if (rd_off >= inst->bitstream_vbuf.size)
-				rd_off = 0;
-
-			dump_len = min_t(size_t, 16, inst->bitstream_vbuf.size - rd_off);
-			dev_warn(inst->dev->dev,
-				 "w4 seq-fail ring bytes: start=%*ph rd[%#zx]=%*ph\n",
-				 16, ring, rd_off, (int)dump_len, ring + rd_off);
-		}
 
 		info->rd_ptr = wave4_dec_get_rd_ptr(inst);
 		fail_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
 		dec_err = vpu_read_reg(inst->dev, W4_RET_DEC_ERR_INFO);
-		dev_warn(inst->dev->dev,
-			 "%s: seq init failed: fail_reason=0x%x dec_err=0x%x bs_start=0x%x bs_size=0x%x bs_param=0x%x bs_opt=0x%x bs_rd=0x%x bs_wr=0x%x\n",
-			 __func__, fail_reason, dec_err,
-			 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-			 vpu_read_reg(inst->dev, W4_BS_SIZE),
-			 vpu_read_reg(inst->dev, W4_BS_PARAM),
-			 vpu_read_reg(inst->dev, W4_BS_OPTION),
-			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-			 vpu_read_reg(inst->dev, W4_BS_WR_PTR));
 		if (fail_reason == 1) {
 			info->seq_init_err_reason = dec_err;
 			return -EIO;
@@ -2122,17 +1895,10 @@ int wave4_vpu_build_up_enc_param(struct device *dev, struct vpu_instance *inst,
 
 	wave4_vdi_clear_memory(vpu_dev, &p_enc_info->vb_work);
 
-	{
-		u32 fail_res = 0;
-
-		vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
-		vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
-		vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
-		ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, &fail_res);
-		if (ret)
-			dev_warn(inst->dev->dev, "w4 enc create_instance failed: %d (fail=0x%x)\n",
-				 ret, fail_res);
-	}
+	vpu_write_reg(inst->dev, W4_ADDR_WORK_BASE, p_enc_info->vb_work.daddr);
+	vpu_write_reg(inst->dev, W4_WORK_SIZE, p_enc_info->vb_work.size);
+	vpu_write_reg(inst->dev, W4_WORK_PARAM, 0);
+	ret = send_firmware_command(inst, W4_CREATE_INSTANCE, true, NULL, NULL);
 	if (ret)
 		goto free_vb_work;
 
@@ -2415,33 +2181,7 @@ int wave4_vpu_enc_init_seq(struct vpu_instance *inst)
 		vpu_write_reg(inst->dev, W4_CMD_ENC_TIME_SCALE, 0);
 		vpu_write_reg(inst->dev, W4_CMD_ENC_NUM_TICKS_POC_DIFF_ONE, 0);
 
-			reg_val = send_firmware_command(inst, W4_ENC_SET_PARAM, false, NULL, NULL);
-			if (reg_val) {
-				dev_warn(inst->dev->dev,
-					 "w4 enc set_param failed (%d): fail=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x rc=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] work=[0x%x+0x%x] temp=[0x%x+0x%x] sec_axi=[0x%x+0x%x use=0x%x] pc=0x%x busy=0x%x host_int=0x%x\n",
-					 reg_val,
-					 vpu_read_reg(inst->dev, W4_RET_FAIL_REASON),
-					 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_PIC_PARAM),
-				 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_PARAM),
-				 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-				 vpu_read_reg(inst->dev, W4_BS_SIZE),
-				 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-				 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-				 vpu_read_reg(inst->dev, W4_ADDR_WORK_BASE),
-				 vpu_read_reg(inst->dev, W4_WORK_SIZE),
-				 vpu_read_reg(inst->dev, W4_ADDR_TEMP_BASE),
-				 vpu_read_reg(inst->dev, W4_TEMP_SIZE),
-				 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
-				 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
-				 vpu_read_reg(inst->dev, W4_USE_SEC_AXI),
-				 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC),
-				 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
-				 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ));
-		}
-		return reg_val;
+		return send_firmware_command(inst, W4_ENC_SET_PARAM, false, NULL, NULL);
 	}
 
 	/* SET_PARAM + COMMON */
@@ -2593,29 +2333,6 @@ int wave4_vpu_enc_get_seq_info(struct vpu_instance *inst, struct enc_initial_inf
 
 	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
 		info->seq_init_err_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
-		dev_warn(inst->dev->dev,
-			 "w4 enc seq_info failed: fail=0x%x pc=0x%x busy=0x%x host_int=0x%x vint_sts=0x%x vint_reason=0x%x cmd_opt=0x%x set_en=0x%x src=0x%x pic=0x%x gop=0x%x rc=0x%x enc=0x%x minmax=0x%x bs=[0x%x+0x%x rd=0x%x wr=0x%x] sec_axi=[0x%x+0x%x use=0x%x]\n",
-			 info->seq_init_err_reason,
-			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC),
-			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W4_VPU_HOST_INT_REQ),
-			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
-			 vpu_read_reg(inst->dev, W4_COMMAND_OPTION),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_SET_PARAM_ENABLE),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_SRC_SIZE),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_PIC_PARAM),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_SEQ_GOP_PARAM),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_PARAM),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_PARAM),
-			 vpu_read_reg(inst->dev, W4_CMD_ENC_RC_MIN_MAX_QP),
-			 vpu_read_reg(inst->dev, W4_BS_START_ADDR),
-			 vpu_read_reg(inst->dev, W4_BS_SIZE),
-			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-			 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-			 vpu_read_reg(inst->dev, W4_ADDR_SEC_AXI),
-			 vpu_read_reg(inst->dev, W4_SEC_AXI_SIZE),
-			 vpu_read_reg(inst->dev, W4_USE_SEC_AXI));
 		return -EIO;
 	}
 
@@ -3109,19 +2826,6 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 	}
 	if (!vpu_read_reg(inst->dev, W4_RET_SUCCESS)) {
 		result->error_reason = vpu_read_reg(inst->dev, W4_RET_FAIL_REASON);
-		dev_warn(inst->dev->dev,
-			 "w4 enc result not ready: fail=0x%x pic_idx=0x%x src_idx=0x%x pic_byte=0x%x pic_type=0x%x bs_rd=0x%x bs_wr=0x%x busy=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			 result->error_reason,
-			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_IDX),
-			 vpu_read_reg(inst->dev, W4_RET_ENC_USED_SRC_IDX),
-			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_BYTE),
-			 vpu_read_reg(inst->dev, W4_RET_ENC_PIC_TYPE),
-			 vpu_read_reg(inst->dev, W4_BS_RD_PTR),
-			 vpu_read_reg(inst->dev, W4_BS_WR_PTR),
-			 vpu_read_reg(inst->dev, W4_VPU_BUSY_STATUS),
-			 vpu_read_reg(inst->dev, W4_VPU_VPU_INT_STS),
-			 vpu_read_reg(inst->dev, W4_VPU_VINT_REASON),
-			 vpu_read_reg(inst->dev, W4_VCPU_CUR_PC));
 		return -EIO;
 	}
 	result->error_reason = 0;
@@ -3156,11 +2860,6 @@ int wave4_vpu_enc_get_result(struct vpu_instance *inst, struct enc_output_info *
 	result->enc_encode_end_tick = 0;
 	result->frame_cycle = vpu_read_reg(inst->dev, W4_RET_FRAME_CYCLE);
 	p_enc_info->first_cycle_check = true;
-	dev_dbg(inst->dev->dev,
-		"w4 enc result: recon_idx=%d src_idx=%d pic_byte=%u pic_type=0x%x vcl=0x%x rd=0x%x wr=0x%x\n",
-		result->recon_frame_index, result->enc_src_idx,
-		result->enc_pic_byte, result->pic_type,
-		result->enc_vcl_nut, (u32)result->rd_ptr, (u32)result->wr_ptr);
 
 	return 0;
 }
