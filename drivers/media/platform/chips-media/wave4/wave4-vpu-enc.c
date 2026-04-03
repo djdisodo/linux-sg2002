@@ -1569,11 +1569,9 @@ static int initialize_sequence(struct vpu_instance *inst)
 	 * Allocate a dedicated internal bitstream ring for sequence setup.
 	 */
 	if (!inst->bitstream_vbuf.size) {
-		/*
-		 * Keep this comfortably above tiny capture queue sizes.
-		 * This ring is used only for setup compatibility.
-		 */
-		inst->bitstream_vbuf.size = 1024 * 1024;
+		inst->bitstream_vbuf.size = W4_ENC_SETUP_BS_SIZE;
+		dev_dbg(inst->dev->dev, "enc setup bitstream ring size: %zu bytes\n",
+			inst->bitstream_vbuf.size);
 		ret = wave4_vdi_allocate_dma_memory(inst->dev, &inst->bitstream_vbuf);
 		if (ret) {
 			memset(&inst->bitstream_vbuf, 0, sizeof(inst->bitstream_vbuf));

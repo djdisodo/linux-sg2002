@@ -63,6 +63,8 @@
 #define W4_MAX_CODE_BUF_SIZE            (256 * 1024)
 #define WAVE5_TEMPBUF_SIZE              (1024 * 1024)
 #define W4_TEMPBUF_SIZE                 (512 * 1024)
+/* Wave420L BSP validates encoder ring buffers with a 64 KiB minimum. */
+#define W4_ENC_SETUP_BS_SIZE            (64 * 1024)
 
 #define W4_SIZE_COMMON                  (W4_MAX_CODE_BUF_SIZE + W4_TEMPBUF_SIZE)
 
