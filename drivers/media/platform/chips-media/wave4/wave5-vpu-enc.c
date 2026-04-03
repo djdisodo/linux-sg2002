@@ -844,6 +844,84 @@ static int wave5_vpu_enc_s_parm(struct file *file, void *fh, struct v4l2_streamp
 	return 0;
 }
 
+static int wave5_vpu_enc_ioctl_reqbufs(struct file *file, void *fh,
+				       struct v4l2_requestbuffers *rb)
+{
+	struct v4l2_requestbuffers req = *rb;
+	bool compat_splane_out = req.type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	int ret;
+
+	if (compat_splane_out)
+		req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+
+	ret = v4l2_m2m_ioctl_reqbufs(file, fh, &req);
+	if (ret)
+		return ret;
+
+	*rb = req;
+	if (compat_splane_out)
+		rb->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+
+	return 0;
+}
+
+static int wave5_vpu_enc_ioctl_querybuf(struct file *file, void *fh,
+					struct v4l2_buffer *b)
+{
+	struct v4l2_buffer mb = *b;
+	struct v4l2_plane plane = { 0 };
+	int ret;
+
+	if (b->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+		return v4l2_m2m_ioctl_querybuf(file, fh, b);
+
+	mb.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	mb.length = 1;
+	mb.m.planes = &plane;
+
+	ret = v4l2_m2m_ioctl_querybuf(file, fh, &mb);
+	if (ret)
+		return ret;
+
+	b->index = mb.index;
+	b->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	b->bytesused = plane.bytesused;
+	b->flags = mb.flags;
+	b->field = mb.field;
+	b->timestamp = mb.timestamp;
+	b->timecode = mb.timecode;
+	b->sequence = mb.sequence;
+	b->memory = mb.memory;
+	b->length = plane.length;
+	b->reserved2 = mb.reserved2;
+	b->request_fd = mb.request_fd;
+	if (mb.memory == V4L2_MEMORY_MMAP)
+		b->m.offset = plane.m.mem_offset;
+
+	return 0;
+}
+
+static int wave5_vpu_enc_ioctl_expbuf(struct file *file, void *fh,
+				      struct v4l2_exportbuffer *eb)
+{
+	struct v4l2_exportbuffer exp = *eb;
+	bool compat_splane_out = exp.type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	int ret;
+
+	if (compat_splane_out)
+		exp.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+
+	ret = v4l2_m2m_ioctl_expbuf(file, fh, &exp);
+	if (ret)
+		return ret;
+
+	*eb = exp;
+	if (compat_splane_out)
+		eb->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+
+	return 0;
+}
+
 static const struct v4l2_ioctl_ops wave5_vpu_enc_ioctl_ops = {
 	.vidioc_querycap = wave5_vpu_enc_querycap,
 	.vidioc_enum_framesizes = wave5_vpu_enc_enum_framesizes,
@@ -864,12 +942,12 @@ static const struct v4l2_ioctl_ops wave5_vpu_enc_ioctl_ops = {
 	.vidioc_g_parm = wave5_vpu_enc_g_parm,
 	.vidioc_s_parm = wave5_vpu_enc_s_parm,
 
-	.vidioc_reqbufs = v4l2_m2m_ioctl_reqbufs,
-	.vidioc_querybuf = v4l2_m2m_ioctl_querybuf,
+	.vidioc_reqbufs = wave5_vpu_enc_ioctl_reqbufs,
+	.vidioc_querybuf = wave5_vpu_enc_ioctl_querybuf,
 	.vidioc_create_bufs = v4l2_m2m_ioctl_create_bufs,
 	.vidioc_prepare_buf = v4l2_m2m_ioctl_prepare_buf,
 	.vidioc_qbuf = v4l2_m2m_ioctl_qbuf,
-	.vidioc_expbuf = v4l2_m2m_ioctl_expbuf,
+	.vidioc_expbuf = wave5_vpu_enc_ioctl_expbuf,
 	.vidioc_dqbuf = v4l2_m2m_ioctl_dqbuf,
 	.vidioc_streamon = v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff = v4l2_m2m_ioctl_streamoff,
