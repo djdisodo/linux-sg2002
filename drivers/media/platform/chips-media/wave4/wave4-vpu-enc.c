@@ -121,10 +121,85 @@ invalid_state_switch:
 	return -EINVAL;
 }
 
+static void wave4_vpu_enc_src_meta_reset(struct enc_info *p_enc_info)
+{
+	p_enc_info->src_meta_head = 0;
+	p_enc_info->src_meta_count = 0;
+}
+
+static int wave4_vpu_enc_src_meta_push(struct vpu_instance *inst,
+				       const struct vb2_v4l2_buffer *src_buf)
+{
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+	struct wave4_enc_src_meta *meta;
+	u32 tail;
+
+	if (WARN_ON(p_enc_info->src_meta_count >= ARRAY_SIZE(p_enc_info->src_meta_fifo)))
+		return -ENOSPC;
+
+	tail = (p_enc_info->src_meta_head + p_enc_info->src_meta_count) %
+		ARRAY_SIZE(p_enc_info->src_meta_fifo);
+	meta = &p_enc_info->src_meta_fifo[tail];
+	meta->idx = src_buf->vb2_buf.index;
+	meta->timestamp = src_buf->vb2_buf.timestamp;
+	meta->flags = src_buf->flags &
+		(V4L2_BUF_FLAG_TIMECODE | V4L2_BUF_FLAG_TSTAMP_SRC_MASK);
+	if (meta->flags & V4L2_BUF_FLAG_TIMECODE)
+		meta->timecode = src_buf->timecode;
+
+	p_enc_info->src_meta_count++;
+
+	return 0;
+}
+
+static bool wave4_vpu_enc_src_meta_pop(struct enc_info *p_enc_info,
+				       struct wave4_enc_src_meta *meta)
+{
+	if (!p_enc_info->src_meta_count)
+		return false;
+
+	*meta = p_enc_info->src_meta_fifo[p_enc_info->src_meta_head];
+	p_enc_info->src_meta_head = (p_enc_info->src_meta_head + 1) %
+		ARRAY_SIZE(p_enc_info->src_meta_fifo);
+	p_enc_info->src_meta_count--;
+
+	return true;
+}
+
+static void wave4_vpu_enc_complete_src_meta(struct vpu_instance *inst,
+					    const struct wave4_enc_src_meta *meta,
+					    enum vb2_buffer_state state)
+{
+	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct vb2_buffer *vb;
+	struct vb2_v4l2_buffer *src_buf;
+
+	vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx), meta->idx);
+	if (!vb)
+		return;
+
+	if (vb->state != VB2_BUF_STATE_ACTIVE && vb->state != VB2_BUF_STATE_QUEUED)
+		return;
+
+	src_buf = to_vb2_v4l2_buffer(vb);
+	if (state == VB2_BUF_STATE_DONE)
+		inst->timestamp = meta->timestamp;
+	v4l2_m2m_buf_done(src_buf, state);
+}
+
+static void wave4_vpu_enc_flush_src_meta(struct vpu_instance *inst,
+					 enum vb2_buffer_state state)
+{
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+	struct wave4_enc_src_meta meta;
+
+	while (wave4_vpu_enc_src_meta_pop(p_enc_info, &meta))
+		wave4_vpu_enc_complete_src_meta(inst, &meta, state);
+}
+
 static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
-	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
 	struct vb2_v4l2_buffer *src_buf;
 	struct vb2_v4l2_buffer *dst_buf;
@@ -196,8 +271,6 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	pic_param.source_frame = &frame_buf;
 	pic_param.code_option.implicit_header_encode = 1;
 	pic_param.code_option.encode_aud = inst->encode_aud;
-	p_enc_info->pending_src_idx = -1;
-	p_enc_info->pending_src_meta_valid = false;
 	ret = wave4_vpu_enc_start_one_frame(inst, &pic_param, fail_res);
 	if (ret) {
 		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
@@ -232,46 +305,24 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 		 * firmware in finish_encode
 		 */
 		if (src_buf) {
-			p_enc_info->pending_src_idx = src_buf->vb2_buf.index;
-			p_enc_info->pending_src_timestamp = src_buf->vb2_buf.timestamp;
-			p_enc_info->pending_src_flags = src_buf->flags &
-				(V4L2_BUF_FLAG_TIMECODE | V4L2_BUF_FLAG_TSTAMP_SRC_MASK);
-			if (p_enc_info->pending_src_flags & V4L2_BUF_FLAG_TIMECODE)
-				p_enc_info->pending_src_timecode = src_buf->timecode;
-			p_enc_info->pending_src_meta_valid = true;
+			ret = wave4_vpu_enc_src_meta_push(inst, src_buf);
+			if (ret) {
+				dev_err(inst->dev->dev,
+					"%s: source metadata FIFO overflow, stopping instance\n",
+					__func__);
+				v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
+				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+				dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+				if (dst_buf)
+					v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+				switch_state(inst, VPU_INST_STATE_STOP);
+				return ret;
+			}
 			v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
 		}
 	}
 
 	return 0;
-}
-
-static void wave4_vpu_enc_complete_pending_src(struct vpu_instance *inst,
-					       enum vb2_buffer_state state)
-{
-	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
-	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
-	struct vb2_buffer *vb;
-	struct vb2_v4l2_buffer *src_buf;
-
-	if (p_enc_info->pending_src_idx < 0)
-		return;
-
-	vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx), p_enc_info->pending_src_idx);
-	if (vb && (vb->state == VB2_BUF_STATE_ACTIVE ||
-		   vb->state == VB2_BUF_STATE_QUEUED)) {
-		src_buf = to_vb2_v4l2_buffer(vb);
-		if (state == VB2_BUF_STATE_DONE) {
-			if (p_enc_info->pending_src_meta_valid)
-				inst->timestamp = p_enc_info->pending_src_timestamp;
-			else
-				inst->timestamp = src_buf->vb2_buf.timestamp;
-		}
-		v4l2_m2m_buf_done(src_buf, state);
-	}
-
-	p_enc_info->pending_src_idx = -1;
-	p_enc_info->pending_src_meta_valid = false;
 }
 
 static void wave4_vpu_enc_put_async_pm(struct vpu_instance *inst)
@@ -291,28 +342,22 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct v4l2_timecode copied_timecode = { 0 };
+	struct wave4_enc_src_meta src_meta;
 	int ret;
 	u32 copied_flags = 0;
 	struct enc_output_info enc_output_info;
-	struct vb2_v4l2_buffer *src_buf = NULL;
 	struct vb2_v4l2_buffer *dst_buf = NULL;
-
-	if (p_enc_info->pending_src_meta_valid && p_enc_info->pending_src_idx >= 0) {
-		inst->timestamp = p_enc_info->pending_src_timestamp;
-		copied_flags = p_enc_info->pending_src_flags;
-		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
-			copied_timecode = p_enc_info->pending_src_timecode;
-	}
+	bool output_eos;
+	bool have_src_meta = false;
 
 	/*
 	 * Crash-guard: streamoff can race with delayed ENC_PIC completions.
 	 * Once stopping starts, never touch ready queues from this callback.
-	 * We only retire the known inflight source buffer to avoid leaving it
-	 * ACTIVE, then exit quietly.
+	 * Retire tracked in-flight source buffers and exit quietly.
 	 */
 	if (p_enc_info->stop_pending || inst->state != VPU_INST_STATE_PIC_RUN ||
 	    !wave4_vpu_both_queues_are_streaming(inst)) {
-		wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
+		wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
 		wave4_vpu_enc_put_async_pm(inst);
 		return;
 	}
@@ -331,10 +376,10 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		/*
 		 * Crash-guard: don't touch source/destination buffer lists here.
 		 * On this error path we can get repeated callbacks without a valid
-		 * report queue entry. Only complete the known in-flight source index
-		 * (if still ACTIVE) plus one pending destination buffer.
+		 * report queue entry. Complete tracked in-flight source buffers and
+		 * one pending destination buffer.
 		 */
-		wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
+		wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
 		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
 		if (dst_buf) {
 			vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
@@ -352,90 +397,53 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		__func__,  enc_output_info.pic_type, enc_output_info.recon_frame_index,
 		enc_output_info.enc_src_idx, enc_output_info.enc_pic_byte, enc_output_info.pts);
 
-	/*
-	 * The source buffer will not be found in the ready-queue as it has been
-	 * dropped after sending of the encode firmware command, locate it in
-	 * the videobuf2 queue directly.
-	 */
-	if (enc_output_info.enc_src_idx >= 0) {
-		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
-						       enc_output_info.enc_src_idx);
-
-		if (vb && (vb->state == VB2_BUF_STATE_ACTIVE ||
-			   vb->state == VB2_BUF_STATE_QUEUED))
-			src_buf = to_vb2_v4l2_buffer(vb);
-		else
-			dev_dbg(inst->dev->dev,
-				"%s: stale completion for src_idx=%d (vb_state=%d)\n",
-				__func__, enc_output_info.enc_src_idx,
-				vb ? vb->state : -1);
-	}
-	/*
-	 * Async ordering guard: if firmware reports a source index that does not
-	 * match the currently tracked in-flight source, this completion is stale.
-	 * Drop it to keep source/destination timestamp mapping coherent.
-	 */
-	if (!src_buf && p_enc_info->pending_src_idx >= 0 &&
-	    enc_output_info.enc_src_idx >= 0 &&
-	    enc_output_info.enc_src_idx != p_enc_info->pending_src_idx &&
-	    !m2m_ctx->is_draining) {
-		dev_dbg(inst->dev->dev,
-			"%s: out-of-sync completion src_idx=%d pending=%d recon_idx=%d size=%u, drop\n",
-			__func__, enc_output_info.enc_src_idx, p_enc_info->pending_src_idx,
-			enc_output_info.recon_frame_index, enc_output_info.bitstream_size);
-		wave4_vpu_enc_put_async_pm(inst);
-		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
-		return;
-	}
-	/*
-	 * Fallback only when firmware did not provide a valid source index.
-	 * If firmware provided one but it is stale, treat it as out-of-sync.
-	 */
-	if (!src_buf && enc_output_info.enc_src_idx < 0 && p_enc_info->pending_src_idx >= 0) {
-		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
-						       p_enc_info->pending_src_idx);
-
-		if (vb && (vb->state == VB2_BUF_STATE_ACTIVE ||
-			   vb->state == VB2_BUF_STATE_QUEUED))
-			src_buf = to_vb2_v4l2_buffer(vb);
-		else
-			dev_dbg(inst->dev->dev,
-				"%s: pending source idx=%d not active (vb_state=%d)\n",
-				__func__, p_enc_info->pending_src_idx,
-				vb ? vb->state : -1);
-	}
-
-	if (src_buf) {
-		inst->timestamp = src_buf->vb2_buf.timestamp;
-		copied_flags = src_buf->flags &
-			(V4L2_BUF_FLAG_TIMECODE | V4L2_BUF_FLAG_TSTAMP_SRC_MASK);
-		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
-			copied_timecode = src_buf->timecode;
-		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
-		if (p_enc_info->pending_src_idx < 0 ||
-		    p_enc_info->pending_src_idx == src_buf->vb2_buf.index) {
-			p_enc_info->pending_src_idx = -1;
-			p_enc_info->pending_src_meta_valid = false;
+	output_eos = enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END;
+	if (!output_eos) {
+		if (!wave4_vpu_enc_src_meta_pop(p_enc_info, &src_meta)) {
+			dev_warn_ratelimited(inst->dev->dev,
+					     "%s: source metadata FIFO empty for src_idx=%d recon_idx=%d; stopping instance\n",
+					     __func__, enc_output_info.enc_src_idx,
+					     enc_output_info.recon_frame_index);
+			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+			if (dst_buf) {
+				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+				dst_buf->field = V4L2_FIELD_NONE;
+				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			}
+			switch_state(inst, VPU_INST_STATE_STOP);
+			wave4_vpu_enc_put_async_pm(inst);
+			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+			return;
 		}
-	}
-	if (!src_buf && p_enc_info->pending_src_idx >= 0)
-		wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_DONE);
 
-	if (!src_buf && p_enc_info->pending_src_idx < 0 &&
-	    enc_output_info.recon_frame_index != RECON_IDX_FLAG_ENC_END &&
-	    !m2m_ctx->is_draining) {
-		dev_dbg(inst->dev->dev,
-			"%s: ignore stale completion src_idx=%d recon_idx=%d size=%u\n",
-			__func__, enc_output_info.enc_src_idx,
-			enc_output_info.recon_frame_index,
-			enc_output_info.bitstream_size);
-		wave4_vpu_enc_put_async_pm(inst);
-		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
-		return;
+		have_src_meta = true;
+		if (enc_output_info.enc_src_idx != src_meta.idx) {
+			dev_warn_ratelimited(inst->dev->dev,
+					     "%s: source metadata FIFO mismatch fw_src_idx=%d expected_src_idx=%d recon_idx=%d; stopping instance\n",
+					     __func__, enc_output_info.enc_src_idx,
+					     src_meta.idx, enc_output_info.recon_frame_index);
+			wave4_vpu_enc_complete_src_meta(inst, &src_meta, VB2_BUF_STATE_ERROR);
+			wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
+			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+			if (dst_buf) {
+				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+				dst_buf->field = V4L2_FIELD_NONE;
+				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			}
+			switch_state(inst, VPU_INST_STATE_STOP);
+			wave4_vpu_enc_put_async_pm(inst);
+			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+			return;
+		}
+
+		copied_flags = src_meta.flags;
+		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
+			copied_timecode = src_meta.timecode;
+		wave4_vpu_enc_complete_src_meta(inst, &src_meta, VB2_BUF_STATE_DONE);
 	}
 
 	dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-	if (enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END) {
+	if (output_eos) {
 		static const struct v4l2_event vpu_event_eos = {
 			.type = V4L2_EVENT_EOS
 		};
@@ -457,6 +465,10 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 			return;
 		}
 
+		if (!have_src_meta) {
+			copied_flags = 0;
+			copied_timecode = (struct v4l2_timecode){ 0 };
+		}
 		vb2_set_plane_payload(&dst_buf->vb2_buf, 0, enc_output_info.bitstream_size);
 		dst_buf->vb2_buf.timestamp = inst->timestamp;
 		dst_buf->field = V4L2_FIELD_NONE;
@@ -1896,12 +1908,13 @@ static void wave4_vpu_enc_stop_streaming(struct vb2_queue *q)
 
 	/*
 	 * Crash-guard: start_encode() removes one source buffer from m2m ready
-	 * queue and leaves it ACTIVE until finish_encode() reports enc_src_idx.
+	 * queue and leaves it ACTIVE until finish_encode() reports completion.
 	 * On streamoff races, that callback may never safely consume queues.
-	 * Force-complete the tracked inflight source here to avoid VB2 warning:
+	 * Force-complete all tracked in-flight source buffers here to avoid
+	 * VB2 warning:
 	 * "stop_streaming operation is leaving buffer ... in active state".
 	 */
-	wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_ERROR);
+	wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
 
 	if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 		streamoff_output(inst, q);
@@ -2065,9 +2078,7 @@ static int wave4_vpu_open_enc(struct file *filp)
 		kfree(inst);
 		return -ENOMEM;
 	}
-	inst->codec_info->enc_info.pending_src_idx = -1;
-	inst->codec_info->enc_info.pending_src_meta_valid = false;
-	inst->codec_info->enc_info.pending_src_flags = 0;
+	wave4_vpu_enc_src_meta_reset(&inst->codec_info->enc_info);
 
 	v4l2_fh_init(&inst->v4l2_fh, vdev);
 	v4l2_fh_add(&inst->v4l2_fh, filp);

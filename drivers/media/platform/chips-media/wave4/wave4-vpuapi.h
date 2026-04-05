@@ -695,6 +695,13 @@ struct dec_info {
 	u32 stream_endflag: 1;
 };
 
+struct wave4_enc_src_meta {
+	s32 idx;
+	u64 timestamp;
+	u32 flags;
+	struct v4l2_timecode timecode;
+};
+
 struct enc_info {
 	struct enc_open_param open_param;
 	struct enc_initial_info initial_info;
@@ -720,11 +727,9 @@ struct enc_info {
 	struct vpu_buf vb_task;
 	u64 cur_pts; /* current timestamp in 90_k_hz */
 	u64 pts_map[32]; /* PTS mapped with source frame index */
-	s32 pending_src_idx; /* source vb2 index currently inflight in firmware (-1 when idle) */
-	u64 pending_src_timestamp;
-	u32 pending_src_flags;
-	struct v4l2_timecode pending_src_timecode;
-	bool pending_src_meta_valid;
+	struct wave4_enc_src_meta src_meta_fifo[W4_COMMAND_QUEUE_DEPTH];
+	u32 src_meta_head;
+	u32 src_meta_count;
 	int async_pm_ref_held; /* runtime-PM ref held by async device_run until finish callback */
 	bool stop_pending; /* streamoff is in progress; ignore late ENC_PIC completions */
 	u32 instance_queue_count;
