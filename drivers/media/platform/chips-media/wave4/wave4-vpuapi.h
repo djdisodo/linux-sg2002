@@ -697,6 +697,7 @@ struct dec_info {
 
 struct wave4_enc_src_meta {
 	s32 idx;
+	s32 dst_idx;
 	u64 timestamp;
 	u32 flags;
 	struct v4l2_timecode timecode;

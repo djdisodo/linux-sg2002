@@ -128,7 +128,8 @@ static void wave4_vpu_enc_src_meta_reset(struct enc_info *p_enc_info)
 }
 
 static int wave4_vpu_enc_src_meta_push(struct vpu_instance *inst,
-				       const struct vb2_v4l2_buffer *src_buf)
+				       const struct vb2_v4l2_buffer *src_buf,
+				       const struct vb2_v4l2_buffer *dst_buf)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct wave4_enc_src_meta *meta;
@@ -141,6 +142,7 @@ static int wave4_vpu_enc_src_meta_push(struct vpu_instance *inst,
 		ARRAY_SIZE(p_enc_info->src_meta_fifo);
 	meta = &p_enc_info->src_meta_fifo[tail];
 	meta->idx = src_buf->vb2_buf.index;
+	meta->dst_idx = dst_buf->vb2_buf.index;
 	meta->timestamp = src_buf->vb2_buf.timestamp;
 	meta->flags = src_buf->flags &
 		(V4L2_BUF_FLAG_TIMECODE | V4L2_BUF_FLAG_TSTAMP_SRC_MASK);
@@ -204,14 +206,48 @@ static void wave4_vpu_enc_complete_src_meta(struct vpu_instance *inst,
 	v4l2_m2m_buf_done(src_buf, state);
 }
 
+static struct vb2_v4l2_buffer *
+wave4_vpu_enc_get_dst_buf_by_idx(struct vpu_instance *inst, s32 idx)
+{
+	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct vb2_buffer *vb;
+
+	vb = vb2_get_buffer(v4l2_m2m_get_dst_vq(m2m_ctx), idx);
+	if (!vb)
+		return NULL;
+
+	if (vb->state != VB2_BUF_STATE_ACTIVE && vb->state != VB2_BUF_STATE_QUEUED)
+		return NULL;
+
+	return to_vb2_v4l2_buffer(vb);
+}
+
+static void wave4_vpu_enc_complete_dst_meta(struct vpu_instance *inst,
+					    const struct wave4_enc_src_meta *meta,
+					    enum vb2_buffer_state state)
+{
+	struct vb2_v4l2_buffer *dst_buf;
+
+	dst_buf = wave4_vpu_enc_get_dst_buf_by_idx(inst, meta->dst_idx);
+	if (!dst_buf)
+		return;
+
+	if (state != VB2_BUF_STATE_DONE)
+		vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+	dst_buf->field = V4L2_FIELD_NONE;
+	v4l2_m2m_buf_done(dst_buf, state);
+}
+
 static void wave4_vpu_enc_flush_src_meta(struct vpu_instance *inst,
 					 enum vb2_buffer_state state)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	struct wave4_enc_src_meta meta;
 
-	while (wave4_vpu_enc_src_meta_pop(p_enc_info, &meta))
+	while (wave4_vpu_enc_src_meta_pop(p_enc_info, &meta)) {
 		wave4_vpu_enc_complete_src_meta(inst, &meta, state);
+		wave4_vpu_enc_complete_dst_meta(inst, &meta, state);
+	}
 }
 
 static int start_encode(struct vpu_instance *inst, u32 *fail_res)
@@ -287,27 +323,40 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 
 		frame_buf.stride = stride;
 		pic_param.src_idx = src_buf->vb2_buf.index;
-		ret = wave4_vpu_enc_src_meta_push(inst, src_buf);
+		ret = wave4_vpu_enc_src_meta_push(inst, src_buf, dst_buf);
 		if (ret) {
 			dev_err(inst->dev->dev,
 				"%s: source metadata FIFO overflow, stopping instance\n",
 				__func__);
-			v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
-			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
-			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-			if (dst_buf)
+			src_buf = v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
+			dst_buf = v4l2_m2m_dst_buf_remove_by_idx(m2m_ctx, dst_buf->vb2_buf.index);
+			if (src_buf)
+				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+			if (dst_buf) {
+				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+				dst_buf->field = V4L2_FIELD_NONE;
 				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			}
 			switch_state(inst, VPU_INST_STATE_STOP);
 			return ret;
 		}
 
 		src_meta_armed = true;
 		src_buf = v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, pic_param.src_idx);
-		if (!src_buf) {
+		dst_buf = v4l2_m2m_dst_buf_remove_by_idx(m2m_ctx, dst_buf->vb2_buf.index);
+		if (!src_buf || !dst_buf) {
 			wave4_vpu_enc_src_meta_drop_last(p_enc_info, NULL);
+			if (src_buf)
+				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+			if (dst_buf) {
+				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+				dst_buf->field = V4L2_FIELD_NONE;
+				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			}
 			dev_warn_ratelimited(inst->dev->dev,
-					     "%s: failed to remove prepared source buffer idx=%u\n",
-					     __func__, pic_param.src_idx);
+					     "%s: failed to remove prepared source/destination buffers src=%p dst=%p idx=%u\n",
+					     __func__, src_buf, dst_buf, pic_param.src_idx);
+			switch_state(inst, VPU_INST_STATE_STOP);
 			return -EINVAL;
 		}
 	}
@@ -326,26 +375,28 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 			wave4_vpu_enc_src_meta_reset(p_enc_info);
 		}
 
+		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame fail: %d\n",
+			__func__, ret);
+
 		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
 			ret = -EINVAL;
 
-		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame fail: %d\n",
-			__func__, ret);
-		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-		if (!dst_buf) {
-			dev_dbg(inst->dev->dev,
-				"%s: Removing dst buf failed, the queue is empty\n",
-				__func__);
-			return -EINVAL;
-		}
 		switch_state(inst, VPU_INST_STATE_STOP);
-		if (src_buf) {
+		if (src_meta_armed) {
 			dst_buf->vb2_buf.timestamp = src_buf->vb2_buf.timestamp;
 			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+			vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+			dst_buf->field = V4L2_FIELD_NONE;
+			v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
 		} else {
-			dst_buf->vb2_buf.timestamp = 0;
+			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+			if (dst_buf) {
+				dst_buf->vb2_buf.timestamp = 0;
+				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
+				dst_buf->field = V4L2_FIELD_NONE;
+				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			}
 		}
-		v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
 	} else {
 		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame success\n",
 			__func__);
@@ -452,13 +503,8 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 					     __func__, enc_output_info.enc_src_idx,
 					     src_meta.idx, enc_output_info.recon_frame_index);
 			wave4_vpu_enc_complete_src_meta(inst, &src_meta, VB2_BUF_STATE_ERROR);
+			wave4_vpu_enc_complete_dst_meta(inst, &src_meta, VB2_BUF_STATE_ERROR);
 			wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
-			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-			if (dst_buf) {
-				vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
-				dst_buf->field = V4L2_FIELD_NONE;
-				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
-			}
 			switch_state(inst, VPU_INST_STATE_STOP);
 			wave4_vpu_enc_put_async_pm(inst);
 			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
@@ -469,14 +515,26 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
 			copied_timecode = src_meta.timecode;
 		wave4_vpu_enc_complete_src_meta(inst, &src_meta, VB2_BUF_STATE_DONE);
+
+		dst_buf = wave4_vpu_enc_get_dst_buf_by_idx(inst, src_meta.dst_idx);
+		if (!dst_buf) {
+			dev_warn_ratelimited(inst->dev->dev,
+					     "%s: destination buffer lookup failed for dst_idx=%d src_idx=%d; stopping instance\n",
+					     __func__, src_meta.dst_idx, src_meta.idx);
+			wave4_vpu_enc_flush_src_meta(inst, VB2_BUF_STATE_ERROR);
+			switch_state(inst, VPU_INST_STATE_STOP);
+			wave4_vpu_enc_put_async_pm(inst);
+			v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+			return;
+		}
 	}
 
-	dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
 	if (output_eos) {
 		static const struct v4l2_event vpu_event_eos = {
 			.type = V4L2_EVENT_EOS
 		};
 
+		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
 		if (!WARN_ON(!dst_buf)) {
 			vb2_set_plane_payload(&dst_buf->vb2_buf, 0, 0);
 			dst_buf->field = V4L2_FIELD_NONE;
