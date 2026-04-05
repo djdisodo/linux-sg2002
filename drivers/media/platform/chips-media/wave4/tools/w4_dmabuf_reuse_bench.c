@@ -27,6 +27,12 @@
 #include <time.h>
 #include <unistd.h>
 
+enum fill_mode {
+	FILL_PATTERN = 0,
+	FILL_RANDOM,
+	FILL_ZERO,
+};
+
 struct options {
 	const char *device;
 	const char *output_path;
@@ -38,6 +44,7 @@ struct options {
 	uint32_t cap_sizeimage;
 	uint32_t cap_buffers;
 	uint32_t out_buffers;
+	enum fill_mode fill_mode;
 	bool verbose;
 };
 
@@ -62,6 +69,7 @@ static void usage(const char *prog)
 		"  -s, --sizeimage <bytes>   CAPTURE sizeimage (default: 1048576)\n"
 		"  -c, --cap-bufs <n>        CAPTURE mmap buffer count (default: 4)\n"
 		"  -q, --out-bufs <n>        OUTPUT mmap buffer count (default: 2)\n"
+		"  -f, --fill <mode>         OUTPUT fill mode: pattern|random|zero (default: pattern)\n"
 		"  -v, --verbose             Verbose log\n"
 		"      --help                Show this help\n",
 		prog);
@@ -229,6 +237,30 @@ static int qbuf_output_mmap(int fd, uint32_t index, uint32_t bytesused, uint32_t
 	return 0;
 }
 
+static int encoder_cmd_stop(int fd, bool verbose)
+{
+	struct v4l2_encoder_cmd cmd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.cmd = V4L2_ENC_CMD_STOP;
+
+	if (xioctl(fd, VIDIOC_ENCODER_CMD, &cmd) == 0)
+		return 0;
+
+	/*
+	 * Some runs can report already-draining when STOP races with last output
+	 * dequeue. Treat this as success and continue draining capture.
+	 */
+	if (errno == EBUSY)
+		return 0;
+
+	if (verbose) {
+		fprintf(stderr, "warn: VIDIOC_ENCODER_CMD STOP failed: %s\n",
+			strerror(errno));
+	}
+	return -1;
+}
+
 static void fill_nv12_pattern(uint8_t *buf, size_t size, uint32_t width, uint32_t height,
 			      uint32_t stride)
 {
@@ -260,6 +292,50 @@ static void fill_nv12_pattern(uint8_t *buf, size_t size, uint32_t width, uint32_
 
 	uv = buf + y_size;
 	memset(uv, 0x80, size - y_size);
+}
+
+static void fill_random_bytes(uint8_t *buf, size_t size, uint32_t seed)
+{
+	uint32_t s = seed ? seed : 1;
+
+	for (size_t i = 0; i < size; i++) {
+		s ^= s << 13;
+		s ^= s >> 17;
+		s ^= s << 5;
+		buf[i] = (uint8_t)s;
+	}
+}
+
+static const char *fill_mode_name(enum fill_mode mode)
+{
+	switch (mode) {
+	case FILL_PATTERN:
+		return "pattern";
+	case FILL_RANDOM:
+		return "random";
+	case FILL_ZERO:
+		return "zero";
+	default:
+		return "unknown";
+	}
+}
+
+static int parse_fill_mode(const char *s, enum fill_mode *mode)
+{
+	if (!strcmp(s, "pattern")) {
+		*mode = FILL_PATTERN;
+		return 0;
+	}
+	if (!strcmp(s, "random")) {
+		*mode = FILL_RANDOM;
+		return 0;
+	}
+	if (!strcmp(s, "zero")) {
+		*mode = FILL_ZERO;
+		return 0;
+	}
+
+	return -1;
 }
 
 static int write_all(int fd, const void *buf, size_t len)
@@ -295,6 +371,7 @@ int main(int argc, char **argv)
 		{ "sizeimage", required_argument, NULL, 's' },
 		{ "cap-bufs", required_argument, NULL, 'c' },
 		{ "out-bufs", required_argument, NULL, 'q' },
+		{ "fill", required_argument, NULL, 'f' },
 		{ "verbose", no_argument, NULL, 'v' },
 		{ "help", no_argument, NULL, 1 },
 		{ 0, 0, 0, 0 },
@@ -310,6 +387,7 @@ int main(int argc, char **argv)
 		.cap_sizeimage = 1024 * 1024,
 		.cap_buffers = 4,
 		.out_buffers = 2,
+		.fill_mode = FILL_PATTERN,
 		.verbose = false,
 	};
 	struct mmap_buf *cap = NULL;
@@ -331,7 +409,7 @@ int main(int argc, char **argv)
 	int c;
 	int ret = EXIT_FAILURE;
 
-	while ((c = getopt_long(argc, argv, "d:o:w:h:r:n:b:s:c:q:v", long_opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "d:o:w:h:r:n:b:s:c:q:f:v", long_opts, NULL)) != -1) {
 		switch (c) {
 		case 'd':
 			opt.device = optarg;
@@ -362,6 +440,12 @@ int main(int argc, char **argv)
 			break;
 		case 'q':
 			opt.out_buffers = (uint32_t)strtoul(optarg, NULL, 0);
+			break;
+		case 'f':
+			if (parse_fill_mode(optarg, &opt.fill_mode) < 0) {
+				fprintf(stderr, "invalid fill mode: %s\n", optarg);
+				return EXIT_FAILURE;
+			}
 			break;
 		case 'v':
 			opt.verbose = true;
@@ -502,8 +586,23 @@ int main(int argc, char **argv)
 	}
 
 	for (uint32_t i = 0; i < out_count; i++) {
-		fill_nv12_pattern(out[i].addr, out[i].length,
-				  opt.width, opt.height, out_bytesperline);
+		switch (opt.fill_mode) {
+		case FILL_PATTERN:
+			fill_nv12_pattern(out[i].addr, out[i].length,
+					  opt.width, opt.height, out_bytesperline);
+			break;
+		case FILL_RANDOM:
+			/*
+			 * Each OUTPUT buffer gets a distinct seed so -q N rotates
+			 * through N different generated frames.
+			 */
+			fill_random_bytes(out[i].addr, out[i].length,
+					  0x9e3779b9u ^ (i * 0x7f4a7c15u));
+			break;
+		case FILL_ZERO:
+			memset(out[i].addr, 0, out[i].length);
+			break;
+		}
 	}
 
 	out_fd = open(opt.output_path, O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0644);
@@ -579,12 +678,20 @@ int main(int argc, char **argv)
 					out_submitted++;
 					out_pending++;
 				} else {
-					if (qbuf_output_mmap(vfd, buf.index, 0,
-							     out[buf.index].length) < 0) {
-						goto cleanup;
+					/*
+					 * Request firmware draining explicitly. Fallback to a
+					 * zero-byte EOS buffer only if ENCODER_CMD is unavailable.
+					 */
+					if (encoder_cmd_stop(vfd, opt.verbose) == 0) {
+						eos_queued = true;
+					} else {
+						if (qbuf_output_mmap(vfd, buf.index, 0,
+								     out[buf.index].length) < 0) {
+							goto cleanup;
+						}
+						eos_queued = true;
+						out_pending++;
 					}
-					eos_queued = true;
-					out_pending++;
 				}
 			}
 		}
@@ -635,12 +742,19 @@ int main(int argc, char **argv)
 
 		if (progress) {
 			idle_loops = 0;
-		} else if (eos_queued && out_pending == 0) {
-			eos_seen = true;
 		} else {
 			struct timespec ts;
 
 			idle_loops++;
+			/*
+			 * If OUTPUT drained but firmware doesn't signal LAST,
+			 * stop waiting after a shorter grace period.
+			 */
+			if (eos_queued && out_pending == 0 && idle_loops > 4000) {
+				fprintf(stderr, "warn: drain timeout without LAST flag\n");
+				eos_seen = true;
+				break;
+			}
 			if (idle_loops > 20000) {
 				fprintf(stderr, "timeout waiting for V4L2 events\n");
 				goto cleanup;
@@ -663,6 +777,7 @@ int main(int argc, char **argv)
 	sys_s = tv_to_sec(&ru_end.ru_stime) - tv_to_sec(&ru_start.ru_stime);
 
 	printf("output_mode: mmap_requeue\n");
+	printf("fill_mode: %s\n", fill_mode_name(opt.fill_mode));
 	printf("output_buffers: %u\n", out_count);
 	printf("submitted_frames: %u\n",
 	       out_submitted > 0 ? out_submitted - (eos_queued ? 1 : 0) : 0);

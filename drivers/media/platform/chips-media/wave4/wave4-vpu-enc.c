@@ -355,7 +355,7 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 	/*
 	 * The source buffer will not be found in the ready-queue as it has been
 	 * dropped after sending of the encode firmware command, locate it in
-	 * the videobuf2 queue directly
+	 * the videobuf2 queue directly.
 	 */
 	if (enc_output_info.enc_src_idx >= 0) {
 		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
@@ -371,11 +371,27 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 				vb ? vb->state : -1);
 	}
 	/*
-	 * Some Wave4 runs report a stale src_idx from a previous ENC_PIC.
-	 * Fall back to the currently tracked in-flight source buffer so
-	 * timestamp/timecode flags stay aligned with the completed picture.
+	 * Async ordering guard: if firmware reports a source index that does not
+	 * match the currently tracked in-flight source, this completion is stale.
+	 * Drop it to keep source/destination timestamp mapping coherent.
 	 */
-	if (!src_buf && p_enc_info->pending_src_idx >= 0) {
+	if (!src_buf && p_enc_info->pending_src_idx >= 0 &&
+	    enc_output_info.enc_src_idx >= 0 &&
+	    enc_output_info.enc_src_idx != p_enc_info->pending_src_idx &&
+	    !m2m_ctx->is_draining) {
+		dev_dbg(inst->dev->dev,
+			"%s: out-of-sync completion src_idx=%d pending=%d recon_idx=%d size=%u, drop\n",
+			__func__, enc_output_info.enc_src_idx, p_enc_info->pending_src_idx,
+			enc_output_info.recon_frame_index, enc_output_info.bitstream_size);
+		wave4_vpu_enc_put_async_pm(inst);
+		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+		return;
+	}
+	/*
+	 * Fallback only when firmware did not provide a valid source index.
+	 * If firmware provided one but it is stale, treat it as out-of-sync.
+	 */
+	if (!src_buf && enc_output_info.enc_src_idx < 0 && p_enc_info->pending_src_idx >= 0) {
 		struct vb2_buffer *vb = vb2_get_buffer(v4l2_m2m_get_src_vq(m2m_ctx),
 						       p_enc_info->pending_src_idx);
 
@@ -396,8 +412,11 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
 			copied_timecode = src_buf->timecode;
 		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
-		p_enc_info->pending_src_idx = -1;
-		p_enc_info->pending_src_meta_valid = false;
+		if (p_enc_info->pending_src_idx < 0 ||
+		    p_enc_info->pending_src_idx == src_buf->vb2_buf.index) {
+			p_enc_info->pending_src_idx = -1;
+			p_enc_info->pending_src_meta_valid = false;
+		}
 	}
 	if (!src_buf && p_enc_info->pending_src_idx >= 0)
 		wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_DONE);
