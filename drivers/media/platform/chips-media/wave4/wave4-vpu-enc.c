@@ -166,6 +166,23 @@ static bool wave4_vpu_enc_src_meta_pop(struct enc_info *p_enc_info,
 	return true;
 }
 
+static bool wave4_vpu_enc_src_meta_drop_last(struct enc_info *p_enc_info,
+					     struct wave4_enc_src_meta *meta)
+{
+	u32 tail;
+
+	if (!p_enc_info->src_meta_count)
+		return false;
+
+	tail = (p_enc_info->src_meta_head + p_enc_info->src_meta_count - 1) %
+		ARRAY_SIZE(p_enc_info->src_meta_fifo);
+	if (meta)
+		*meta = p_enc_info->src_meta_fifo[tail];
+	p_enc_info->src_meta_count--;
+
+	return true;
+}
+
 static void wave4_vpu_enc_complete_src_meta(struct vpu_instance *inst,
 					    const struct wave4_enc_src_meta *meta,
 					    enum vb2_buffer_state state)
@@ -200,15 +217,18 @@ static void wave4_vpu_enc_flush_src_meta(struct vpu_instance *inst,
 static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 {
 	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
 	struct vb2_v4l2_buffer *src_buf;
 	struct vb2_v4l2_buffer *dst_buf;
+	struct wave4_enc_src_meta dropped_meta;
 	struct frame_buffer frame_buf;
 	struct enc_param pic_param;
 	const struct v4l2_format_info *info;
 	u32 stride = inst->src_fmt.plane_fmt[0].bytesperline;
 	u32 luma_size = 0;
 	u32 chroma_size = 0;
+	bool src_meta_armed = false;
 
 	memset(&pic_param, 0, sizeof(struct enc_param));
 	memset(&frame_buf, 0, sizeof(struct frame_buffer));
@@ -264,8 +284,32 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 			frame_buf.buf_cr =
 				vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 2);
 		}
+
 		frame_buf.stride = stride;
 		pic_param.src_idx = src_buf->vb2_buf.index;
+		ret = wave4_vpu_enc_src_meta_push(inst, src_buf);
+		if (ret) {
+			dev_err(inst->dev->dev,
+				"%s: source metadata FIFO overflow, stopping instance\n",
+				__func__);
+			v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
+			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+			dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
+			if (dst_buf)
+				v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
+			switch_state(inst, VPU_INST_STATE_STOP);
+			return ret;
+		}
+
+		src_meta_armed = true;
+		src_buf = v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, pic_param.src_idx);
+		if (!src_buf) {
+			wave4_vpu_enc_src_meta_drop_last(p_enc_info, NULL);
+			dev_warn_ratelimited(inst->dev->dev,
+					     "%s: failed to remove prepared source buffer idx=%u\n",
+					     __func__, pic_param.src_idx);
+			return -EINVAL;
+		}
 	}
 
 	pic_param.source_frame = &frame_buf;
@@ -273,18 +317,20 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	pic_param.code_option.encode_aud = inst->encode_aud;
 	ret = wave4_vpu_enc_start_one_frame(inst, &pic_param, fail_res);
 	if (ret) {
+		if (src_meta_armed &&
+		    wave4_vpu_enc_src_meta_drop_last(p_enc_info, &dropped_meta) &&
+		    dropped_meta.idx != src_buf->vb2_buf.index) {
+			dev_warn_ratelimited(inst->dev->dev,
+					     "%s: source metadata rollback mismatch drop=%d expected=%d\n",
+					     __func__, dropped_meta.idx, src_buf->vb2_buf.index);
+			wave4_vpu_enc_src_meta_reset(p_enc_info);
+		}
+
 		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
-			return -EINVAL;
+			ret = -EINVAL;
 
 		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame fail: %d\n",
 			__func__, ret);
-		src_buf = v4l2_m2m_src_buf_remove(m2m_ctx);
-		if (!src_buf) {
-			dev_dbg(inst->dev->dev,
-				"%s: Removing src buf failed, the queue is empty\n",
-				__func__);
-			return -EINVAL;
-		}
 		dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
 		if (!dst_buf) {
 			dev_dbg(inst->dev->dev,
@@ -293,33 +339,16 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 			return -EINVAL;
 		}
 		switch_state(inst, VPU_INST_STATE_STOP);
-		dst_buf->vb2_buf.timestamp = src_buf->vb2_buf.timestamp;
-		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+		if (src_buf) {
+			dst_buf->vb2_buf.timestamp = src_buf->vb2_buf.timestamp;
+			v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
+		} else {
+			dst_buf->vb2_buf.timestamp = 0;
+		}
 		v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
 	} else {
 		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame success\n",
 			__func__);
-		/*
-		 * Remove the source buffer from the ready-queue now and finish
-		 * it in the videobuf2 framework once the index is returned by the
-		 * firmware in finish_encode
-		 */
-		if (src_buf) {
-			ret = wave4_vpu_enc_src_meta_push(inst, src_buf);
-			if (ret) {
-				dev_err(inst->dev->dev,
-					"%s: source metadata FIFO overflow, stopping instance\n",
-					__func__);
-				v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
-				v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_ERROR);
-				dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-				if (dst_buf)
-					v4l2_m2m_buf_done(dst_buf, VB2_BUF_STATE_ERROR);
-				switch_state(inst, VPU_INST_STATE_STOP);
-				return ret;
-			}
-			v4l2_m2m_src_buf_remove_by_idx(m2m_ctx, src_buf->vb2_buf.index);
-		}
 	}
 
 	return 0;
