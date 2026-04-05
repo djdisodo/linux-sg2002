@@ -89,16 +89,6 @@ static const struct vpu_format enc_fmt_list[FMT_TYPES][MAX_FMTS] = {
 	}
 };
 
-/*
- * Keep ENC_PIC completion synchronous by default on Wave420L.
- * The async completion path can leave userspace blocked in poll/streamoff
- * when IRQ/result callbacks are dropped, while sync mode has proven stable.
- */
-static int wave4_sync_enc_pic_done = 1;
-module_param_named(w4_sync_enc_pic_done, wave4_sync_enc_pic_done, int, 0644);
-MODULE_PARM_DESC(w4_sync_enc_pic_done,
-		 "Wait/poll for ENC_PIC completion in device_run and finish synchronously (0=off, 1=on default)");
-
 static int switch_state(struct vpu_instance *inst, enum vpu_instance_state state)
 {
 	switch (state) {
@@ -176,12 +166,10 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 		dev_dbg(inst->dev->dev, "%s: No source buffer found\n", __func__);
 		if (m2m_ctx->is_draining) {
 			pic_param.src_end_flag = 1;
-			inst->sent_eos = true;
 		} else {
 			return -EAGAIN;
 		}
 	} else {
-		inst->sent_eos = false;
 		if (inst->src_fmt.num_planes == 1) {
 			frame_buf.buf_y =
 				vb2_dma_contig_plane_dma_addr(&src_buf->vb2_buf, 0);
@@ -209,6 +197,7 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 	pic_param.code_option.implicit_header_encode = 1;
 	pic_param.code_option.encode_aud = inst->encode_aud;
 	p_enc_info->pending_src_idx = -1;
+	p_enc_info->pending_src_meta_valid = false;
 	ret = wave4_vpu_enc_start_one_frame(inst, &pic_param, fail_res);
 	if (ret) {
 		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
@@ -282,6 +271,7 @@ static void wave4_vpu_enc_complete_pending_src(struct vpu_instance *inst,
 	}
 
 	p_enc_info->pending_src_idx = -1;
+	p_enc_info->pending_src_meta_valid = false;
 }
 
 static void wave4_vpu_enc_put_async_pm(struct vpu_instance *inst)
@@ -307,7 +297,7 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 	struct vb2_v4l2_buffer *src_buf = NULL;
 	struct vb2_v4l2_buffer *dst_buf = NULL;
 
-	if (p_enc_info->pending_src_meta_valid) {
+	if (p_enc_info->pending_src_meta_valid && p_enc_info->pending_src_idx >= 0) {
 		inst->timestamp = p_enc_info->pending_src_timestamp;
 		copied_flags = p_enc_info->pending_src_flags;
 		if (copied_flags & V4L2_BUF_FLAG_TIMECODE)
@@ -407,12 +397,26 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 			copied_timecode = src_buf->timecode;
 		v4l2_m2m_buf_done(src_buf, VB2_BUF_STATE_DONE);
 		p_enc_info->pending_src_idx = -1;
+		p_enc_info->pending_src_meta_valid = false;
 	}
 	if (!src_buf && p_enc_info->pending_src_idx >= 0)
 		wave4_vpu_enc_complete_pending_src(inst, VB2_BUF_STATE_DONE);
 
+	if (!src_buf && p_enc_info->pending_src_idx < 0 &&
+	    enc_output_info.recon_frame_index != RECON_IDX_FLAG_ENC_END &&
+	    !m2m_ctx->is_draining) {
+		dev_dbg(inst->dev->dev,
+			"%s: ignore stale completion src_idx=%d recon_idx=%d size=%u\n",
+			__func__, enc_output_info.enc_src_idx,
+			enc_output_info.recon_frame_index,
+			enc_output_info.bitstream_size);
+		wave4_vpu_enc_put_async_pm(inst);
+		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+		return;
+	}
+
 	dst_buf = v4l2_m2m_dst_buf_remove(m2m_ctx);
-	if (enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END && inst->sent_eos) {
+	if (enc_output_info.recon_frame_index == RECON_IDX_FLAG_ENC_END) {
 		static const struct v4l2_event vpu_event_eos = {
 			.type = V4L2_EVENT_EOS
 		};
@@ -424,7 +428,6 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		}
 
 		v4l2_event_queue_fh(&inst->v4l2_fh, &vpu_event_eos);
-		inst->sent_eos = false;
 
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	} else {
@@ -436,7 +439,6 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		}
 
 		vb2_set_plane_payload(&dst_buf->vb2_buf, 0, enc_output_info.bitstream_size);
-
 		dst_buf->vb2_buf.timestamp = inst->timestamp;
 		dst_buf->field = V4L2_FIELD_NONE;
 		dst_buf->flags &= ~(V4L2_BUF_FLAG_TIMECODE | V4L2_BUF_FLAG_TSTAMP_SRC_MASK |
@@ -1937,8 +1939,17 @@ static void wave4_vpu_enc_device_run(void *priv)
 	}
 	switch (inst->state) {
 	case VPU_INST_STATE_PIC_RUN:
+		/*
+		 * Arm completion ownership before issuing ENC_PIC.
+		 * Otherwise a very fast completion can race in and get discarded
+		 * before device_run returns, leaking runtime-PM accounting.
+		 */
+		WRITE_ONCE(p_enc_info->async_pm_ref_held, 1);
+
 		ret = start_encode(inst, &fail_res);
 		if (ret) {
+			wave4_vpu_enc_put_async_pm(inst);
+
 			if (ret == -EINVAL)
 				dev_err(inst->dev->dev,
 					"Frame encoding on m2m context (%p), fail: %d (res: %d)\n",
@@ -1947,14 +1958,6 @@ static void wave4_vpu_enc_device_run(void *priv)
 				dev_dbg(inst->dev->dev, "Missing buffers for encode, try again\n");
 			break;
 		}
-		if (READ_ONCE(wave4_sync_enc_pic_done)) {
-			(void)wave4_vpu_wait_interrupt(inst, VPU_ENC_TIMEOUT);
-			inst->ops->finish_process(inst);
-			dev_dbg(inst->dev->dev, "%s: leave after synchronous finish", __func__);
-			pm_runtime_put_autosuspend(inst->dev->dev);
-			return;
-		}
-		p_enc_info->async_pm_ref_held = 1;
 		dev_dbg(inst->dev->dev, "%s: leave with active job", __func__);
 		return;
 	default:
@@ -1997,9 +2000,28 @@ static int wave4_vpu_enc_job_ready(void *priv)
 	return false;
 }
 
+static void wave4_vpu_enc_job_abort(void *priv)
+{
+	struct vpu_instance *inst = priv;
+	struct v4l2_m2m_ctx *m2m_ctx = inst->v4l2_fh.m2m_ctx;
+	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
+
+	/*
+	 * Crash-guard: if a running ENC_PIC job never reports completion,
+	 * v4l2_m2m_cancel_job() waits forever in release/streamoff.
+	 * Force-finish the running m2m job so teardown can proceed.
+	 */
+	p_enc_info->stop_pending = true;
+	if (inst->state == VPU_INST_STATE_PIC_RUN)
+		switch_state(inst, VPU_INST_STATE_STOP);
+	wave4_vpu_enc_put_async_pm(inst);
+	v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
+}
+
 static const struct v4l2_m2m_ops wave4_vpu_enc_m2m_ops = {
 	.device_run = wave4_vpu_enc_device_run,
 	.job_ready = wave4_vpu_enc_job_ready,
+	.job_abort = wave4_vpu_enc_job_abort,
 };
 
 static int wave4_vpu_open_enc(struct file *filp)

@@ -179,9 +179,9 @@ static irqreturn_t wave4_vpu_irq_thread(int irq, void *dev_id)
 				break;
 
 			/*
-			 * Encoder sync mode completes ENC_PIC in device_run.
-			 * In that mode no async PM ref is held, so queued PIC
-			 * IRQ callbacks are stale duplicates and must be ignored.
+			 * Encoder completion callbacks are valid only while one
+			 * async ENC_PIC job is inflight. Ignore stale/duplicate
+			 * PIC notifications that arrive after job completion.
 			 */
 			if (inst->type == VPU_INST_TYPE_ENC &&
 			    !READ_ONCE(inst->codec_info->enc_info.async_pm_ref_held))
@@ -235,8 +235,9 @@ static int irq_thread(void *data)
 					break;
 
 				/*
-				 * Encoder sync mode completes ENC_PIC in device_run.
-				 * Skip duplicate PIC completions from the IRQ queue.
+				 * Encoder completion callbacks are valid only while one
+				 * async ENC_PIC job is inflight. Ignore stale/duplicate
+				 * PIC notifications that arrive after job completion.
 				 */
 				if (inst->type == VPU_INST_TYPE_ENC &&
 				    !READ_ONCE(inst->codec_info->enc_info.async_pm_ref_held))
