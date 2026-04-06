@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause) */
 /*
- * Wave5 series multi-standard codec IP - error values
+ * Wave4 series multi-standard codec IP - error values
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -9,11 +9,11 @@
 #define ERROR_CODE_H_INCLUDED
 
 /*
- * WAVE5
+ * WAVE4
  */
 
 /************************************************************************/
-/* WAVE5 COMMON SYSTEM ERROR (FAIL_REASON)                              */
+/* WAVE4 COMMON SYSTEM ERROR (FAIL_REASON)                              */
 /************************************************************************/
 #define WAVE5_SYSERR_QUEUEING_FAIL                                     0x00000001
 #define WAVE5_SYSERR_ACCESS_VIOLATION_HW                               0x00000040
@@ -39,7 +39,7 @@
 #define WAVE5_SYSERR_FATAL_VPU_HANGUP                                  0xf0000000
 
 /************************************************************************/
-/* WAVE5 COMMAND QUEUE ERROR (FAIL_REASON)                              */
+/* WAVE4 COMMAND QUEUE ERROR (FAIL_REASON)                              */
 /************************************************************************/
 #define WAVE5_CMDQ_ERR_NOT_QUEABLE_CMD                                 0x00000001
 #define WAVE5_CMDQ_ERR_SKIP_MODE_ENABLE                                0x00000002
@@ -49,7 +49,7 @@
 #define WAVE5_CMDQ_ERR_CMD_BUF_FULL                                    0x00000006
 
 /************************************************************************/
-/* WAVE5 ERROR ON DECODER (ERR_INFO)                                    */
+/* WAVE4 ERROR ON DECODER (ERR_INFO)                                    */
 /************************************************************************/
 // HEVC
 #define HEVC_SPSERR_SEQ_PARAMETER_SET_ID                               0x00001000
@@ -211,7 +211,7 @@
 #define AVC_ETCERR_INPLACE_V                                           0x0000500F
 
 /************************************************************************/
-/* WAVE5 WARNING ON DECODER (WARN_INFO)                                 */
+/* WAVE4 WARNING ON DECODER (WARN_INFO)                                 */
 /************************************************************************/
 // HEVC
 #define HEVC_SPSWARN_MAX_SUB_LAYERS_MINUS1                             0x00000001
@@ -273,16 +273,16 @@
 #define AVC_PRESWARN_MISSING_SLICE                                     0x01200000
 
 /************************************************************************/
-/* WAVE5 ERROR ON ENCODER (ERR_INFO)                                    */
+/* WAVE4 ERROR ON ENCODER (ERR_INFO)                                    */
 /************************************************************************/
 
 /************************************************************************/
-/* WAVE5 WARNING ON ENCODER (WARN_INFO)                                 */
+/* WAVE4 WARNING ON ENCODER (WARN_INFO)                                 */
 /************************************************************************/
 #define WAVE5_ETCWARN_FORCED_SPLIT_BY_CU8X8                            0x000000001
 
 /************************************************************************/
-/* WAVE5 debug info (PRI_REASON)                                        */
+/* WAVE4 debug info (PRI_REASON)                                        */
 /************************************************************************/
 #define WAVE5_DEC_VCORE_VCE_HANGUP                                     0x0001
 #define WAVE5_DEC_VCORE_UNDETECTED_SYNTAX_ERR                          0x0002

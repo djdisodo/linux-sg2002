@@ -12,7 +12,7 @@ LOCAL_ROOT="${LOCAL_ROOT:-$SCRIPT_DIR/../test-logs}"
 LOCAL_MODULE="$SCRIPT_DIR/../wave4.ko"
 
 MODE="${MODE:-encode}"
-REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video1}"
+REMOTE_DEVICE="${REMOTE_DEVICE:-/dev/video0}"
 REMOTE_INPUT="${REMOTE_INPUT:-}"
 REMOTE_OUTPUT=""
 PIX_FMT="${PIX_FMT:-HEVC}"
@@ -31,7 +31,7 @@ DO_DEPLOY=1
 DO_RELOAD=1
 PULL_LOGS=1
 
-W4_BASE_PARAMS_DEFAULT="w4_use_reserved_mem=1"
+W4_BASE_PARAMS_DEFAULT=""
 W4_BASE_PARAMS="${W4_BASE_PARAMS:-$W4_BASE_PARAMS_DEFAULT}"
 
 BASE_MODULE_PARAMS=()
@@ -53,7 +53,7 @@ Common options:
   --output <remote path>      Output file path on target
                               decode default: <case_dir>/out.yuv
                               encode default: <case_dir>/out.h265
-  --device <node>             Video node (default: /dev/video1)
+  --device <node>             Video node (default: /dev/video0)
   --pixfmt <fmt>              Codec queue pixfmt (default: HEVC)
   --raw-pixfmt <fmt>          Raw input pixfmt for encode mode (default: YU12)
   --width <px>                Frame width override
@@ -78,8 +78,8 @@ Deployment / target:
   -h, --help                  Show this help
 
 Environment:
-  W4_BASE_PARAMS defaults to "w4_use_reserved_mem=1"
-  Set W4_BASE_PARAMS='' to disable built-in module params.
+  W4_BASE_PARAMS defaults to empty.
+  Use W4_BASE_PARAMS to append default insmod params for all runs.
 EOF
 }
 
@@ -228,6 +228,9 @@ for param in "${MODULE_PARAMS[@]}"; do
 done
 INSMOD_ARGS="${INSMOD_ARGS%" "}"
 INSMOD_ARGS_B64="$(printf '%s' "$INSMOD_ARGS" | base64 -w0)"
+if [[ -z "$INSMOD_ARGS_B64" ]]; then
+  INSMOD_ARGS_B64="__EMPTY__"
+fi
 
 if [[ -z "$CUSTOM_V4L2_CMD" ]]; then
   if [[ "$MODE" == "decode" ]]; then
@@ -356,7 +359,11 @@ ln -sfn "$case_dir" "$remote_root/latest"
 
 dmesg -C >/dev/null 2>&1 || true
 
-insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+if [ "$insmod_args_b64" = "__EMPTY__" ]; then
+  insmod_args=""
+else
+  insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+fi
 v4l2_cmd="$(printf '%s' "$v4l2_cmd_b64" | base64 -d)"
 
 if [ "$do_reload" = "1" ]; then
@@ -433,7 +440,11 @@ ln -sfn "$case_dir" "$remote_root/latest"
 
 dmesg -C >/dev/null 2>&1 || true
 
-insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+if [ "$insmod_args_b64" = "__EMPTY__" ]; then
+  insmod_args=""
+else
+  insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+fi
 v4l2_cmd="$(printf '%s' "$v4l2_cmd_b64" | base64 -d)"
 
 if [ "$do_reload" = "1" ]; then

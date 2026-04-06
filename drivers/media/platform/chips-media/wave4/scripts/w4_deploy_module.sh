@@ -153,13 +153,20 @@ fi
 rsync -az --checksum --progress -e "$SSH_CMD" "$LOCAL_MODULE" "$TARGET_HOST:$TARGET_MODULE"
 
 if (( ! SKIP_LOAD )); then
-  INSMOD_ARGS="${INSMOD_PARAMS[*]}"
-  INSMOD_ARGS_B64="$(printf '%s' "$INSMOD_ARGS" | base64 -w0)"
+INSMOD_ARGS="${INSMOD_PARAMS[*]}"
+INSMOD_ARGS_B64="$(printf '%s' "$INSMOD_ARGS" | base64 -w0)"
+if [[ -z "$INSMOD_ARGS_B64" ]]; then
+  INSMOD_ARGS_B64="__EMPTY__"
+fi
   "${ssh_argv[@]}" "$TARGET_HOST" sh -s -- "$TARGET_MODULE" "$INSMOD_ARGS_B64" <<'EOSH'
 set -eu
 target_module="$1"
 insmod_args_b64="$2"
-insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+if [ "$insmod_args_b64" = "__EMPTY__" ]; then
+  insmod_args=""
+else
+  insmod_args="$(printf '%s' "$insmod_args_b64" | base64 -d)"
+fi
 
 if lsmod | grep -q "^wave4 "; then
   modprobe -r wave4 2>/dev/null || true

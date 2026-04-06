@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
- * Wave5 series multi-standard codec IP - low level access functions
+ * Wave4 series multi-standard codec IP - low level access functions
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
 
 #include <linux/bug.h>
-#include "wave5-vdi.h"
-#include "wave5-vpu.h"
-#include "wave5-regdefine.h"
+#include "wave4-vdi.h"
+#include "wave4-vpu.h"
+#include "wave4-regdefine.h"
 #include <linux/delay.h>
 
-static int wave5_vdi_allocate_common_memory(struct device *dev)
+static int wave4_vdi_allocate_common_memory(struct device *dev)
 {
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 
@@ -20,7 +20,7 @@ static int wave5_vdi_allocate_common_memory(struct device *dev)
 
 		vpu_dev->common_mem.size = W4_SIZE_COMMON;
 
-		ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vpu_dev->common_mem);
+		ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vpu_dev->common_mem);
 		if (ret) {
 			dev_err(dev, "unable to allocate common buffer\n");
 			return ret;
@@ -38,7 +38,7 @@ int wave4_vdi_init(struct device *dev)
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 	int ret;
 
-	ret = wave5_vdi_allocate_common_memory(dev);
+	ret = wave4_vdi_allocate_common_memory(dev);
 	if (ret < 0) {
 		dev_err(dev, "[VDI] failed to get vpu common buffer from driver\n");
 		return ret;
@@ -50,11 +50,11 @@ int wave4_vdi_init(struct device *dev)
 	}
 
 	/* if BIT processor is not running. */
-	if (wave5_vdi_read_register(vpu_dev, W5_VCPU_CUR_PC) == 0) {
+	if (wave4_vdi_read_register(vpu_dev, W4_VCPU_CUR_PC) == 0) {
 		int i;
 
 		for (i = 0; i < 64; i++)
-			wave5_vdi_write_register(vpu_dev, (i * 4) + 0x100, 0x0);
+			wave4_vdi_write_register(vpu_dev, (i * 4) + 0x100, 0x0);
 	}
 
 	dev_dbg(dev, "[VDI] driver initialized successfully\n");
@@ -67,22 +67,22 @@ int wave4_vdi_release(struct device *dev)
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
 
 	vpu_dev->vdb_register = NULL;
-	wave5_vdi_free_dma_memory(vpu_dev, &vpu_dev->common_mem);
+	wave4_vdi_free_dma_memory(vpu_dev, &vpu_dev->common_mem);
 
 	return 0;
 }
 
-void wave5_vdi_write_register(struct vpu_device *vpu_dev, u32 addr, u32 data)
+void wave4_vdi_write_register(struct vpu_device *vpu_dev, u32 addr, u32 data)
 {
 	writel(data, vpu_dev->vdb_register + addr);
 }
 
-unsigned int wave5_vdi_read_register(struct vpu_device *vpu_dev, u32 addr)
+unsigned int wave4_vdi_read_register(struct vpu_device *vpu_dev, u32 addr)
 {
 	return readl(vpu_dev->vdb_register + addr);
 }
 
-int wave5_vdi_clear_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
+int wave4_vdi_clear_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 {
 	if (!vb || !vb->vaddr) {
 		dev_err(vpu_dev->dev, "%s: unable to clear unmapped buffer\n", __func__);
@@ -93,7 +93,7 @@ int wave5_vdi_clear_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 	return vb->size;
 }
 
-int wave5_vdi_write_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb, size_t offset,
+int wave4_vdi_write_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb, size_t offset,
 			   u8 *data, size_t len)
 {
 	if (!vb || !vb->vaddr) {
@@ -111,7 +111,7 @@ int wave5_vdi_write_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb, size_
 	return len;
 }
 
-int wave5_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
+int wave4_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 {
 	void *vaddr;
 	dma_addr_t daddr;
@@ -131,7 +131,7 @@ int wave5_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb
 	return 0;
 }
 
-int wave5_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
+int wave4_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 {
 	if (vb->size == 0)
 		return -EINVAL;
@@ -151,7 +151,7 @@ int wave5_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb)
 	return 0;
 }
 
-int wave5_vdi_allocate_array(struct vpu_device *vpu_dev, struct vpu_buf *array, unsigned int count,
+int wave4_vdi_allocate_array(struct vpu_device *vpu_dev, struct vpu_buf *array, unsigned int count,
 			     size_t size)
 {
 	struct vpu_buf vb_buf;
@@ -164,21 +164,21 @@ int wave5_vdi_allocate_array(struct vpu_device *vpu_dev, struct vpu_buf *array, 
 			continue;
 
 		if (array[i].size != 0)
-			wave5_vdi_free_dma_memory(vpu_dev, &array[i]);
+			wave4_vdi_free_dma_memory(vpu_dev, &array[i]);
 
-		ret = wave5_vdi_allocate_dma_memory(vpu_dev, &vb_buf);
+		ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_buf);
 		if (ret)
 			return -ENOMEM;
 		array[i] = vb_buf;
 	}
 
 	for (i = count; i < MAX_REG_FRAME; i++)
-		wave5_vdi_free_dma_memory(vpu_dev, &array[i]);
+		wave4_vdi_free_dma_memory(vpu_dev, &array[i]);
 
 	return 0;
 }
 
-void wave5_vdi_allocate_sram(struct vpu_device *vpu_dev)
+void wave4_vdi_allocate_sram(struct vpu_device *vpu_dev)
 {
 	struct vpu_buf *vb = &vpu_dev->sram_buf;
 	dma_addr_t daddr;
@@ -208,7 +208,7 @@ void wave5_vdi_allocate_sram(struct vpu_device *vpu_dev)
 		__func__, &vb->daddr, vb->size, vb->vaddr);
 }
 
-void wave5_vdi_free_sram(struct vpu_device *vpu_dev)
+void wave4_vdi_free_sram(struct vpu_device *vpu_dev)
 {
 	struct vpu_buf *vb = &vpu_dev->sram_buf;
 

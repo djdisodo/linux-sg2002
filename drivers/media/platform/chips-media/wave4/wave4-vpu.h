@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause) */
 /*
- * Wave5 series multi-standard codec IP - basic types
+ * Wave4 series multi-standard codec IP - basic types
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -14,8 +14,8 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-vmalloc.h>
-#include "wave5-vpuconfig.h"
-#include "wave5-vpuapi.h"
+#include "wave4-vpuconfig.h"
+#include "wave4-vpuapi.h"
 
 #define VPU_BUF_SYNC_TO_DEVICE 0
 #define VPU_BUF_SYNC_FROM_DEVICE 1
@@ -41,32 +41,27 @@ struct vpu_format {
 	const struct v4l2_frmsize_stepwise *v4l2_frmsize;
 };
 
-extern int wave4_common_layout_mode;
-extern int wave4_common_work_offset_mb;
-extern int wave4_common_bs_offset_mb;
-extern int wave4_common_bs_size_mb;
-
-static inline struct vpu_instance *wave5_to_vpu_inst(struct v4l2_fh *vfh)
+static inline struct vpu_instance *wave4_to_vpu_inst(struct v4l2_fh *vfh)
 {
 	return container_of(vfh, struct vpu_instance, v4l2_fh);
 }
 
 static inline struct vpu_instance *file_to_vpu_inst(struct file *filp)
 {
-	return wave5_to_vpu_inst(file_to_v4l2_fh(filp));
+	return wave4_to_vpu_inst(file_to_v4l2_fh(filp));
 }
 
-static inline struct vpu_instance *wave5_ctrl_to_vpu_inst(struct v4l2_ctrl *vctrl)
+static inline struct vpu_instance *wave4_ctrl_to_vpu_inst(struct v4l2_ctrl *vctrl)
 {
 	return container_of(vctrl->handler, struct vpu_instance, v4l2_ctrl_hdl);
 }
 
-static inline struct vpu_src_buffer *wave5_to_vpu_src_buf(struct vb2_v4l2_buffer *vbuf)
+static inline struct vpu_src_buffer *wave4_to_vpu_src_buf(struct vb2_v4l2_buffer *vbuf)
 {
 	return container_of(vbuf, struct vpu_src_buffer, v4l2_m2m_buf.vb);
 }
 
-static inline struct vpu_dst_buffer *wave5_to_vpu_dst_buf(struct vb2_v4l2_buffer *vbuf)
+static inline struct vpu_dst_buffer *wave4_to_vpu_dst_buf(struct vb2_v4l2_buffer *vbuf)
 {
 	return container_of(vbuf, struct vpu_dst_buffer, v4l2_m2m_buf.vb);
 }
@@ -77,7 +72,7 @@ int  wave4_vpu_dec_register_device(struct vpu_device *dev);
 void wave4_vpu_dec_unregister_device(struct vpu_device *dev);
 int  wave4_vpu_enc_register_device(struct vpu_device *dev);
 void wave4_vpu_enc_unregister_device(struct vpu_device *dev);
-static inline bool wave5_vpu_both_queues_are_streaming(struct vpu_instance *inst)
+static inline bool wave4_vpu_both_queues_are_streaming(struct vpu_instance *inst)
 {
 	struct vb2_queue *vq_cap =
 		v4l2_m2m_get_vq(inst->v4l2_fh.m2m_ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
- * Wave5 series multi-standard codec IP - helper functions
+ * Wave4 series multi-standard codec IP - helper functions
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -8,14 +8,14 @@
 #include <linux/bug.h>
 #include <linux/pm_runtime.h>
 #include <linux/delay.h>
-#include "wave5-vpuapi.h"
-#include "wave5-regdefine.h"
-#include "wave5.h"
+#include "wave4-vpuapi.h"
+#include "wave4-regdefine.h"
+#include "wave4.h"
 
 #define DECODE_ALL_TEMPORAL_LAYERS 0
 #define DECODE_ALL_SPATIAL_LAYERS 0
 
-static int wave5_initialize_vpu(struct device *dev, u8 *code, size_t size)
+static int wave4_initialize_vpu(struct device *dev, u8 *code, size_t size)
 {
 	int ret;
 	struct vpu_device *vpu_dev = dev_get_drvdata(dev);
@@ -50,7 +50,7 @@ int wave4_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size)
 	if (!bitcode || size == 0)
 		return -EINVAL;
 
-	return wave5_initialize_vpu(dev, bitcode, size);
+	return wave4_initialize_vpu(dev, bitcode, size);
 }
 
 int wave4_vpu_flush_instance(struct vpu_instance *inst)
@@ -84,13 +84,13 @@ int wave4_vpu_flush_instance(struct vpu_instance *inst)
 			struct dec_output_info dec_info;
 
 			mutex_unlock(&inst->dev->hw_lock);
-			wave5_vpu_dec_get_output_info(inst, &dec_info);
+			wave4_vpu_dec_get_output_info(inst, &dec_info);
 			mutex_ret = mutex_lock_interruptible(&inst->dev->hw_lock);
 			if (mutex_ret)
 				return mutex_ret;
 			if (dec_info.index_frame_display >= 0) {
 				mutex_unlock(&inst->dev->hw_lock);
-				wave5_vpu_dec_set_disp_flag(inst, dec_info.index_frame_display);
+				wave4_vpu_dec_set_disp_flag(inst, dec_info.index_frame_display);
 				mutex_ret = mutex_lock_interruptible(&inst->dev->hw_lock);
 				if (mutex_ret)
 					return mutex_ret;
@@ -125,7 +125,7 @@ err_out:
 	return ret;
 }
 
-static int wave5_check_dec_open_param(struct vpu_instance *inst, struct dec_open_param *param)
+static int wave4_check_dec_open_param(struct vpu_instance *inst, struct dec_open_param *param)
 {
 	if (inst->id >= MAX_NUM_INSTANCE) {
 		dev_err(inst->dev->dev, "Too many simultaneous instances: %d (max: %u)\n",
@@ -150,7 +150,7 @@ static int wave5_check_dec_open_param(struct vpu_instance *inst, struct dec_open
 	return 0;
 }
 
-int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_param)
+int wave4_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_param)
 {
 	struct dec_info *p_dec_info;
 	int ret;
@@ -158,7 +158,7 @@ int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_pa
 	dma_addr_t buffer_addr;
 	size_t buffer_size;
 
-	ret = wave5_check_dec_open_param(inst, open_param);
+	ret = wave4_check_dec_open_param(inst, open_param);
 	if (ret)
 		return ret;
 
@@ -203,14 +203,14 @@ static int reset_auxiliary_buffers(struct vpu_instance *inst, unsigned int index
 	    p_dec_info->vb_fbc_c_tbl[index].size == 0)
 		return 1;
 
-	wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_mv[index]);
-	wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_y_tbl[index]);
-	wave5_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_c_tbl[index]);
+	wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_mv[index]);
+	wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_y_tbl[index]);
+	wave4_vdi_free_dma_memory(inst->dev, &p_dec_info->vb_fbc_c_tbl[index]);
 
 	return 0;
 }
 
-int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
+int wave4_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -253,7 +253,7 @@ int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 		}
 
 		mutex_unlock(&vpu_dev->hw_lock);
-		wave5_vpu_dec_get_output_info(inst, &dec_info);
+		wave4_vpu_dec_get_output_info(inst, &dec_info);
 		ret_mutex = mutex_lock_interruptible(&vpu_dev->hw_lock);
 		if (ret_mutex) {
 			pm_runtime_put_sync(inst->dev->dev);
@@ -263,7 +263,7 @@ int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 
 	dev_dbg(inst->dev->dev, "%s: dec_finish_seq complete\n", __func__);
 
-	wave5_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
+	wave4_vdi_free_dma_memory(vpu_dev, &p_dec_info->vb_work);
 
 	for (i = 0 ; i < MAX_REG_FRAME; i++) {
 		ret = reset_auxiliary_buffers(inst, i);
@@ -281,7 +281,7 @@ unlock_and_return:
 	return ret;
 }
 
-int wave5_vpu_dec_issue_seq_init(struct vpu_instance *inst)
+int wave4_vpu_dec_issue_seq_init(struct vpu_instance *inst)
 {
 	int ret;
 	struct vpu_device *vpu_dev = inst->dev;
@@ -297,7 +297,7 @@ int wave5_vpu_dec_issue_seq_init(struct vpu_instance *inst)
 	return ret;
 }
 
-int wave5_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initial_info *info)
+int wave4_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initial_info *info)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -321,7 +321,7 @@ int wave5_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initia
 	return ret;
 }
 
-int wave5_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of_decoding_fbs,
+int wave4_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of_decoding_fbs,
 					   int num_of_display_fbs, int stride, int height)
 {
 	struct dec_info *p_dec_info;
@@ -363,7 +363,7 @@ err_out:
 	return ret;
 }
 
-int wave5_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *prd_ptr,
+int wave4_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *prd_ptr,
 				       dma_addr_t *pwr_ptr, size_t *size)
 {
 	struct dec_info *p_dec_info;
@@ -398,7 +398,7 @@ int wave5_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *pr
 	return 0;
 }
 
-int wave5_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size)
+int wave4_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size)
 {
 	struct dec_info *p_dec_info;
 	dma_addr_t wr_ptr;
@@ -441,7 +441,7 @@ int wave5_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size
 	return ret;
 }
 
-int wave5_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail)
+int wave4_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -461,7 +461,7 @@ int wave5_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail)
 	return ret;
 }
 
-int wave5_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int update_wr_ptr)
+int wave4_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int update_wr_ptr)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -482,7 +482,7 @@ int wave5_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int upd
 	return ret;
 }
 
-dma_addr_t wave5_vpu_dec_get_rd_ptr(struct vpu_instance *inst)
+dma_addr_t wave4_vpu_dec_get_rd_ptr(struct vpu_instance *inst)
 {
 	int ret;
 	dma_addr_t rd_ptr = 0;
@@ -498,7 +498,7 @@ dma_addr_t wave5_vpu_dec_get_rd_ptr(struct vpu_instance *inst)
 	return rd_ptr;
 }
 
-int wave5_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_info *info)
+int wave4_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_info *info)
 {
 	struct dec_info *p_dec_info;
 	int ret;
@@ -576,7 +576,7 @@ int wave5_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 	}
 
 	p_dec_info->stream_rd_ptr = wave4_dec_get_rd_ptr(inst);
-	p_dec_info->frame_display_flag = vpu_read_reg(vpu_dev, W5_RET_DEC_DISP_IDC);
+	p_dec_info->frame_display_flag = vpu_read_reg(vpu_dev, W4_RET_DEC_DISP_IDC);
 
 	val = p_dec_info->num_of_decoding_fbs; //fb_offset
 
@@ -610,7 +610,7 @@ err_out:
 	return ret;
 }
 
-int wave5_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index)
+int wave4_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret;
@@ -628,7 +628,7 @@ int wave5_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index)
 	return ret;
 }
 
-int wave5_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index)
+int wave4_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret = 0;
@@ -646,7 +646,7 @@ int wave5_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index)
 	return ret;
 }
 
-int wave5_vpu_dec_reset_framebuffer(struct vpu_instance *inst, unsigned int index)
+int wave4_vpu_dec_reset_framebuffer(struct vpu_instance *inst, unsigned int index)
 {
 	if (index >= MAX_REG_FRAME)
 		return -EINVAL;
@@ -654,12 +654,12 @@ int wave5_vpu_dec_reset_framebuffer(struct vpu_instance *inst, unsigned int inde
 	if (inst->frame_vbuf[index].size == 0)
 		return -EINVAL;
 
-	wave5_vdi_free_dma_memory(inst->dev, &inst->frame_vbuf[index]);
+	wave4_vdi_free_dma_memory(inst->dev, &inst->frame_vbuf[index]);
 
 	return 0;
 }
 
-int wave5_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter)
+int wave4_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter)
 {
 	struct dec_info *p_dec_info = &inst->codec_info->dec_info;
 	int ret = 0;
@@ -676,7 +676,7 @@ int wave5_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd
 		int i;
 
 		for (i = 0; i < MAX_REG_FRAME; i++) {
-			ret = wave5_vpu_dec_reset_framebuffer(inst, i);
+			ret = wave4_vpu_dec_reset_framebuffer(inst, i);
 			if (ret)
 				break;
 		}
@@ -703,7 +703,7 @@ int wave5_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd
 	return ret;
 }
 
-int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_param)
+int wave4_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_param)
 {
 	struct enc_info *p_enc_info;
 	int ret;
@@ -731,7 +731,7 @@ int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_pa
 	return ret;
 }
 
-int wave5_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
+int wave4_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
@@ -742,11 +742,13 @@ int wave5_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
 	if (!inst->codec_info)
 		return -EINVAL;
 
-	pm_runtime_resume_and_get(inst->dev->dev);
+	ret = pm_runtime_resume_and_get(inst->dev->dev);
+	if (ret < 0)
+		return ret;
 
 	ret = mutex_lock_interruptible(&vpu_dev->hw_lock);
 	if (ret) {
-		pm_runtime_resume_and_get(inst->dev->dev);
+		pm_runtime_put_sync(inst->dev->dev);
 		return ret;
 	}
 
@@ -754,38 +756,38 @@ int wave5_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
 		ret = wave4_vpu_enc_finish_seq(inst, fail_res);
 		if (ret < 0 && *fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "enc_finish_seq timed out\n");
-			pm_runtime_resume_and_get(inst->dev->dev);
 			mutex_unlock(&vpu_dev->hw_lock);
+			pm_runtime_put_sync(inst->dev->dev);
 			return ret;
 		}
 
 		if (*fail_res == WAVE5_SYSERR_VPU_STILL_RUNNING &&
 		    retry++ >= MAX_FIRMWARE_CALL_RETRY) {
-			pm_runtime_resume_and_get(inst->dev->dev);
 			mutex_unlock(&vpu_dev->hw_lock);
+			pm_runtime_put_sync(inst->dev->dev);
 			return -ETIMEDOUT;
 		}
 	} while (ret != 0);
 
 	dev_dbg(inst->dev->dev, "%s: enc_finish_seq complete\n", __func__);
 
-	wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_work);
+	wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_work);
 
 	if (inst->std == W_HEVC_ENC || inst->std == W_AVC_ENC) {
-		wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_sub_sam_buf);
-		wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_mv);
-		wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_fbc_y_tbl);
-		wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_fbc_c_tbl);
+		wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_sub_sam_buf);
+		wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_mv);
+		wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_fbc_y_tbl);
+		wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_fbc_c_tbl);
 	}
 
-	wave5_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_task);
+	wave4_vdi_free_dma_memory(vpu_dev, &p_enc_info->vb_task);
 	mutex_unlock(&vpu_dev->hw_lock);
 	pm_runtime_put_sync(inst->dev->dev);
 
 	return 0;
 }
 
-int wave5_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int num,
+int wave4_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int num,
 					unsigned int stride, int height,
 					enum tiled_map_type map_type)
 {
@@ -843,7 +845,7 @@ int wave5_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int 
 	return ret;
 }
 
-static int wave5_check_enc_param(struct vpu_instance *inst, struct enc_param *param)
+static int wave4_check_enc_param(struct vpu_instance *inst, struct enc_param *param)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
@@ -863,7 +865,7 @@ static int wave5_check_enc_param(struct vpu_instance *inst, struct enc_param *pa
 	return 0;
 }
 
-int wave5_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *param, u32 *fail_res)
+int wave4_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *param, u32 *fail_res)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
@@ -874,7 +876,7 @@ int wave5_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *p
 	if (p_enc_info->stride == 0) /* this means frame buffers have not been registered. */
 		return -EINVAL;
 
-	ret = wave5_check_enc_param(inst, param);
+	ret = wave4_check_enc_param(inst, param);
 	if (ret)
 		return ret;
 
@@ -891,7 +893,7 @@ int wave5_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *p
 	return ret;
 }
 
-int wave5_vpu_enc_get_output_info(struct vpu_instance *inst, struct enc_output_info *info)
+int wave4_vpu_enc_get_output_info(struct vpu_instance *inst, struct enc_output_info *info)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
@@ -916,7 +918,7 @@ unlock:
 	return ret;
 }
 
-int wave5_vpu_enc_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter)
+int wave4_vpu_enc_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 
@@ -961,7 +963,7 @@ int wave5_vpu_enc_give_command(struct vpu_instance *inst, enum codec_command cmd
 	return 0;
 }
 
-int wave5_vpu_enc_issue_seq_init(struct vpu_instance *inst)
+int wave4_vpu_enc_issue_seq_init(struct vpu_instance *inst)
 {
 	int ret;
 	struct vpu_device *vpu_dev = inst->dev;
@@ -977,7 +979,7 @@ int wave5_vpu_enc_issue_seq_init(struct vpu_instance *inst)
 	return ret;
 }
 
-int wave5_vpu_enc_complete_seq_init(struct vpu_instance *inst, struct enc_initial_info *info)
+int wave4_vpu_enc_complete_seq_init(struct vpu_instance *inst, struct enc_initial_info *info)
 {
 	struct enc_info *p_enc_info = &inst->codec_info->enc_info;
 	int ret;
