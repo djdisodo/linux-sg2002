@@ -543,6 +543,13 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 
 		v4l2_event_queue_fh(&inst->v4l2_fh, &vpu_event_eos);
 
+		/*
+		 * Drop async ownership before job_finish() wakes the next m2m job.
+		 * Otherwise the next device_run can re-arm ownership while this
+		 * completion path still clears the previous one, losing one ENC_PIC
+		 * completion and stalling poll/select users.
+		 */
+		wave4_vpu_enc_put_async_pm(inst);
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	} else {
 		if (!dst_buf) {
@@ -582,10 +589,15 @@ static void wave4_vpu_enc_finish_encode(struct vpu_instance *inst)
 		dev_dbg(inst->dev->dev, "%s: frame_cycle %8u\n",
 			__func__, enc_output_info.frame_cycle);
 
+		/*
+		 * Keep async ownership transitions ordered before scheduling the
+		 * next mem2mem job to avoid races with the IRQ stale-filter.
+		 */
+		wave4_vpu_enc_put_async_pm(inst);
 		v4l2_m2m_job_finish(inst->v4l2_m2m_dev, m2m_ctx);
 	}
 
-	wave4_vpu_enc_put_async_pm(inst);
+	return;
 }
 
 static int wave4_vpu_enc_querycap(struct file *file, void *fh, struct v4l2_capability *cap)
