@@ -66,7 +66,7 @@ static void usage(const char *prog)
 		"  -r, --fps <n>             Source fps metadata (default: 30)\n"
 		"  -n, --frames <n>          Number of repeated input frames (default: 300)\n"
 		"  -b, --bitrate <bps>       Target bitrate via V4L2_CID_MPEG_VIDEO_BITRATE (default: 1000000)\n"
-		"  -s, --sizeimage <bytes>   CAPTURE sizeimage (default: 1048576)\n"
+		"  -s, --sizeimage <bytes>   CAPTURE sizeimage (default: 1048576; auto-raised for -f random)\n"
 		"  -c, --cap-bufs <n>        CAPTURE mmap buffer count (default: 4)\n"
 		"  -q, --out-bufs <n>        OUTPUT mmap buffer count (default: 2)\n"
 		"  -f, --fill <mode>         OUTPUT fill mode: pattern|random|zero (default: pattern)\n"
@@ -403,6 +403,7 @@ int main(int argc, char **argv)
 	uint32_t out_submitted = 0, cap_done = 0;
 	int out_pending = 0;
 	bool eos_queued = false, eos_seen = false;
+	bool cap_sizeimage_user = false;
 	int64_t t0, t1;
 	double elapsed_s, fps, user_s, sys_s;
 	int idle_loops = 0;
@@ -434,6 +435,7 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			opt.cap_sizeimage = (uint32_t)strtoul(optarg, NULL, 0);
+			cap_sizeimage_user = true;
 			break;
 		case 'c':
 			opt.cap_buffers = (uint32_t)strtoul(optarg, NULL, 0);
@@ -463,6 +465,23 @@ int main(int argc, char **argv)
 	    opt.cap_buffers < 2 || opt.out_buffers < 1) {
 		fprintf(stderr, "invalid numeric option values\n");
 		return EXIT_FAILURE;
+	}
+
+	/*
+	 * High-entropy inputs can produce near-raw-frame output bursts on Wave4.
+	 * With too-small CAPTURE buffers firmware may hang in ENC_PIC.
+	 * Keep the default lightweight for normal pattern/zero modes, but
+	 * auto-raise for random mode unless user explicitly set --sizeimage.
+	 */
+	if (opt.fill_mode == FILL_RANDOM && !cap_sizeimage_user) {
+		uint64_t min_cap = (uint64_t)opt.width * opt.height * 3 / 2;
+
+		if (min_cap > UINT32_MAX) {
+			fprintf(stderr, "frame size too large\n");
+			return EXIT_FAILURE;
+		}
+		if (opt.cap_sizeimage < (uint32_t)min_cap)
+			opt.cap_sizeimage = (uint32_t)min_cap;
 	}
 
 	vfd = open(opt.device, O_RDWR | O_NONBLOCK | O_CLOEXEC);
@@ -778,6 +797,7 @@ int main(int argc, char **argv)
 
 	printf("output_mode: mmap_requeue\n");
 	printf("fill_mode: %s\n", fill_mode_name(opt.fill_mode));
+	printf("capture_sizeimage: %u\n", cap_sizeimage);
 	printf("output_buffers: %u\n", out_count);
 	printf("submitted_frames: %u\n",
 	       out_submitted > 0 ? out_submitted - (eos_queued ? 1 : 0) : 0);
