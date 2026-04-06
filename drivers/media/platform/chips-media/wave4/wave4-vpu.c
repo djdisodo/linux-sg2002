@@ -687,7 +687,7 @@ static void wave4_vpu_remove(struct platform_device *pdev)
 static const struct wave4_match_data sophgo_wave4_data = {
 	/* Keep DT match flags as the userspace-visible capability contract. */
 	.flags = W4_IS_ENC,
-	.fw_name = "fw_vcodec/monet.bin",
+	.fw_name = "cnm/wave420l_codec_fw.bin",
 	.allow_internal_sram = true,
 	.force_polling_backend = true,
 	.use_std_def1_caps = true,
