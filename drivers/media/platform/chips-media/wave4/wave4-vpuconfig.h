@@ -61,7 +61,6 @@
 #define W4_REMAP_MAX_SIZE               (1024 * 1024)
 
 #define W4_MAX_CODE_BUF_SIZE            (256 * 1024)
-#define WAVE5_TEMPBUF_SIZE              (1024 * 1024)
 #define W4_TEMPBUF_SIZE                 (512 * 1024)
 /* Wave420L BSP validates encoder ring buffers with a 64 KiB minimum. */
 #define W4_ENC_SETUP_BS_SIZE            (64 * 1024)
@@ -70,15 +69,15 @@
 
 //=====4. VPU REPORT MEMORY  ======================//
 
-#define WAVE5_UPPER_PROC_AXI_ID     0x0
+#define W4_UPPER_PROC_AXI_ID     0x0
 
-#define WAVE5_PROC_AXI_ID           0x0
-#define WAVE5_PRP_AXI_ID            0x0
-#define WAVE5_FBD_Y_AXI_ID          0x0
-#define WAVE5_FBC_Y_AXI_ID          0x0
-#define WAVE5_FBD_C_AXI_ID          0x0
-#define WAVE5_FBC_C_AXI_ID          0x0
-#define WAVE5_SEC_AXI_ID            0x0
-#define WAVE5_PRI_AXI_ID            0x0
+#define W4_PROC_AXI_ID           0x0
+#define W4_PRP_AXI_ID            0x0
+#define W4_FBD_Y_AXI_ID          0x0
+#define W4_FBC_Y_AXI_ID          0x0
+#define W4_FBD_C_AXI_ID          0x0
+#define W4_FBC_C_AXI_ID          0x0
+#define W4_SEC_AXI_ID            0x0
+#define W4_PRI_AXI_ID            0x0
 
 #endif  /* _VPU_CONFIG_H_ */

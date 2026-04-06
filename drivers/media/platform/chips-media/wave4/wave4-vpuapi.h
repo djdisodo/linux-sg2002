@@ -39,17 +39,17 @@ enum vpu_instance_state {
 };
 
 /* Maximum available on hardware. */
-#define WAVE5_MAX_FBS 32
+#define W4_MAX_FBS 32
 
-#define MAX_REG_FRAME (WAVE5_MAX_FBS * 2)
+#define MAX_REG_FRAME (W4_MAX_FBS * 2)
 
-#define WAVE5_DEC_HEVC_BUF_SIZE(_w, _h) (DIV_ROUND_UP(_w, 64) * DIV_ROUND_UP(_h, 64) * 256 + 64)
-#define WAVE5_DEC_AVC_BUF_SIZE(_w, _h) ((((ALIGN(_w, 256) / 16) * (ALIGN(_h, 16) / 16)) + 16) * 80)
+#define W4_DEC_HEVC_BUF_SIZE(_w, _h) (DIV_ROUND_UP(_w, 64) * DIV_ROUND_UP(_h, 64) * 256 + 64)
+#define W4_DEC_AVC_BUF_SIZE(_w, _h) ((((ALIGN(_w, 256) / 16) * (ALIGN(_h, 16) / 16)) + 16) * 80)
 
-#define WAVE5_FBC_LUMA_TABLE_SIZE(_w, _h) (ALIGN(_h, 64) * ALIGN(_w, 256) / 32)
-#define WAVE5_FBC_CHROMA_TABLE_SIZE(_w, _h) (ALIGN((_h), 64) * ALIGN((_w) / 2, 256) / 32)
-#define WAVE5_ENC_AVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) * ALIGN(_h, 64) / 32)
-#define WAVE5_ENC_HEVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) / 64 * ALIGN(_h, 64) / 64 * 128)
+#define W4_FBC_LUMA_TABLE_SIZE(_w, _h) (ALIGN(_h, 64) * ALIGN(_w, 256) / 32)
+#define W4_FBC_CHROMA_TABLE_SIZE(_w, _h) (ALIGN((_h), 64) * ALIGN((_w) / 2, 256) / 32)
+#define W4_ENC_AVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) * ALIGN(_h, 64) / 32)
+#define W4_ENC_HEVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) / 64 * ALIGN(_h, 64) / 64 * 128)
 
 /*
  * common struct and definition
@@ -274,20 +274,20 @@ enum packed_format_num {
 };
 
 enum wave4_interrupt_bit {
-	INT_WAVE5_INIT_VPU = 0,
-	INT_WAVE5_WAKEUP_VPU = 1,
-	INT_WAVE5_SLEEP_VPU = 2,
-	INT_WAVE5_CREATE_INSTANCE = 3,
-	INT_WAVE5_FLUSH_INSTANCE = 4,
-	INT_WAVE5_DESTROY_INSTANCE = 5,
-	INT_WAVE5_INIT_SEQ = 6,
-	INT_WAVE5_SET_FRAMEBUF = 7,
-	INT_WAVE5_DEC_PIC = 8,
-	INT_WAVE5_ENC_PIC = 8,
-	INT_WAVE5_ENC_SET_PARAM = 9,
-	INT_WAVE5_DEC_QUERY = 14,
-	INT_WAVE5_BSBUF_EMPTY = 15,
-	INT_WAVE5_BSBUF_FULL = 15,
+	INT_W4_INIT_VPU = 0,
+	INT_W4_WAKEUP_VPU = 1,
+	INT_W4_SLEEP_VPU = 2,
+	INT_W4_CREATE_INSTANCE = 3,
+	INT_W4_FLUSH_INSTANCE = 4,
+	INT_W4_DESTROY_INSTANCE = 5,
+	INT_W4_INIT_SEQ = 6,
+	INT_W4_SET_FRAMEBUF = 7,
+	INT_W4_DEC_PIC = 8,
+	INT_W4_ENC_PIC = 8,
+	INT_W4_ENC_SET_PARAM = 9,
+	INT_W4_DEC_QUERY = 14,
+	INT_W4_BSBUF_EMPTY = 15,
+	INT_W4_BSBUF_FULL = 15,
 };
 
 enum pic_type {
@@ -680,7 +680,7 @@ struct dec_info {
 	u32 user_data_enable;
 	u32 user_data_buf_size;
 	struct vpu_buf vb_work;
-	struct dec_output_info dec_out_info[WAVE5_MAX_FBS];
+	struct dec_output_info dec_out_info[W4_MAX_FBS];
 	u32 seq_change_mask;
 	enum temporal_id_mode temp_id_select_mode;
 	u32 target_temp_id;
@@ -833,7 +833,7 @@ struct vpu_instance {
 	bool nv21;
 	bool eos;
 	bool sent_eos; /* check if EOS is sent to application */
-	bool retry; /* retry to feed bitstream if failure reason is WAVE5_SYSERR_QUEUEING_FAIL*/
+	bool retry; /* retry to feed bitstream if failure reason is W4_SYSERR_QUEUEING_FAIL*/
 	int queuing_num; /* count of bitstream queued */
 	struct mutex feed_lock; /* lock for feeding bitstream buffers */
 	bool queuing_fail; /* if there is the queuing failure */

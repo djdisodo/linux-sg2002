@@ -1722,7 +1722,7 @@ static void wave4_vpu_dec_device_run(void *priv)
 			goto finish_job_and_return;
 		}
 
-		if (fail_res == WAVE5_SYSERR_QUEUEING_FAIL) {
+		if (fail_res == W4_SYSERR_QUEUEING_FAIL) {
 			inst->retry = true;
 			inst->queuing_fail = true;
 		} else {

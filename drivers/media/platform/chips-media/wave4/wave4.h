@@ -5,11 +5,11 @@
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
 
-#ifndef __WAVE5_FUNCTION_H__
-#define __WAVE5_FUNCTION_H__
+#ifndef __WAVE4_FUNCTION_H__
+#define __WAVE4_FUNCTION_H__
 
-#define WAVE5_SUBSAMPLED_ONE_SIZE(_w, _h)	(ALIGN((_w) / 4, 16) * ALIGN((_h) / 4, 8))
-#define WAVE5_SUBSAMPLED_ONE_SIZE_AVC(_w, _h)	(ALIGN((_w) / 4, 32) * ALIGN((_h) / 4, 4))
+#define W4_SUBSAMPLED_ONE_SIZE(_w, _h)	(ALIGN((_w) / 4, 16) * ALIGN((_h) / 4, 8))
+#define W4_SUBSAMPLED_ONE_SIZE_AVC(_w, _h)	(ALIGN((_w) / 4, 32) * ALIGN((_h) / 4, 4))
 
 /*
  * Bitstream buffer option: Explicit End
@@ -120,4 +120,4 @@ int wave4_vpu_enc_finish_seq(struct vpu_instance *inst, u32 *fail_res);
 
 int wave4_vpu_enc_check_open_param(struct vpu_instance *inst, struct enc_open_param *open_param);
 
-#endif /* __WAVE5_FUNCTION_H__ */
+#endif /* __WAVE4_FUNCTION_H__ */

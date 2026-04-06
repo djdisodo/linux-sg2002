@@ -90,7 +90,7 @@ static void _wave4_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 	u32 reg_val;
 
 	switch (reg_fail_reason) {
-	case WAVE5_SYSERR_QUEUEING_FAIL:
+	case W4_SYSERR_QUEUEING_FAIL:
 		if (vpu_dev->product == PRODUCT_ID_W4) {
 			dev_warn(dev, "%s: codec error class: 0x%x\n", func, reg_fail_reason);
 			break;
@@ -98,29 +98,29 @@ static void _wave4_print_reg_err(struct vpu_device *vpu_dev, u32 reg_fail_reason
 		reg_val = vpu_read_reg(vpu_dev, W4_RET_QUEUE_FAIL_REASON);
 		dev_warn(dev, "%s: queueing failure detail: 0x%x\n", func, reg_val);
 		break;
-	case WAVE5_SYSERR_RESULT_NOT_READY:
+	case W4_SYSERR_RESULT_NOT_READY:
 		dev_dbg(dev, "%s: result not ready: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_ACCESS_VIOLATION_HW:
+	case W4_SYSERR_ACCESS_VIOLATION_HW:
 		dev_err(dev, "%s: access violation: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_WATCHDOG_TIMEOUT:
+	case W4_SYSERR_WATCHDOG_TIMEOUT:
 		dev_err(dev, "%s: watchdog timeout: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_BUS_ERROR:
+	case W4_SYSERR_BUS_ERROR:
 		dev_err(dev, "%s: bus error: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_DOUBLE_FAULT:
+	case W4_SYSERR_DOUBLE_FAULT:
 		dev_err(dev, "%s: double fault: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_VPU_STILL_RUNNING:
+	case W4_SYSERR_VPU_STILL_RUNNING:
 		if (vpu_dev->product == PRODUCT_ID_W4) {
 			dev_err(dev, "%s: access violation: 0x%x\n", func, reg_fail_reason);
 			break;
 		}
 		dev_err(dev, "%s: still running: 0x%x\n", func, reg_fail_reason);
 		break;
-	case WAVE5_SYSERR_VLC_BUF_FULL:
+	case W4_SYSERR_VLC_BUF_FULL:
 		dev_err(dev, "%s: vlc buf full: 0x%x\n", func, reg_fail_reason);
 		break;
 	default:
@@ -395,7 +395,7 @@ static int wave4_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 		 * otherwise accepted in the legacy W4 flow (e.g. SET_FB,
 		 * DESTROY_INSTANCE). Treat it as non-fatal here.
 		 */
-		if (reason == WAVE5_CMDQ_ERR_SKIP_MODE_ENABLE) {
+		if (reason == W4_CMDQ_ERR_SKIP_MODE_ENABLE) {
 			if (fail_res)
 				*fail_res = reason;
 			dev_dbg(dev->dev,
@@ -409,7 +409,7 @@ static int wave4_vpu_firmware_command_queue_error_check(struct vpu_device *dev, 
 		if (fail_res)
 			*fail_res = reason;
 
-		if (reason == WAVE5_SYSERR_VPU_STILL_RUNNING &&
+		if (reason == W4_SYSERR_VPU_STILL_RUNNING &&
 		    dev->product != PRODUCT_ID_W4)
 			return -EBUSY;
 
@@ -1083,11 +1083,11 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 
 		switch (inst->std) {
 		case W_HEVC_DEC:
-			mv_col_size = WAVE5_DEC_HEVC_BUF_SIZE(init_info->pic_width,
+			mv_col_size = W4_DEC_HEVC_BUF_SIZE(init_info->pic_width,
 							      init_info->pic_height);
 			break;
 		case W_AVC_DEC:
-			mv_col_size = WAVE5_DEC_AVC_BUF_SIZE(init_info->pic_width,
+			mv_col_size = W4_DEC_AVC_BUF_SIZE(init_info->pic_width,
 							     init_info->pic_height);
 			break;
 		default:
@@ -1103,8 +1103,8 @@ int wave4_vpu_dec_register_framebuffer(struct vpu_instance *inst, struct frame_b
 
 		frame_width = init_info->pic_width;
 		frame_height = init_info->pic_height;
-		fbc_y_tbl_size = ALIGN(WAVE5_FBC_LUMA_TABLE_SIZE(frame_width, frame_height), 16);
-		fbc_c_tbl_size = ALIGN(WAVE5_FBC_CHROMA_TABLE_SIZE(frame_width, frame_height), 16);
+		fbc_y_tbl_size = ALIGN(W4_FBC_LUMA_TABLE_SIZE(frame_width, frame_height), 16);
+		fbc_c_tbl_size = ALIGN(W4_FBC_CHROMA_TABLE_SIZE(frame_width, frame_height), 16);
 
 		size = ALIGN(fbc_y_tbl_size, BUFFER_MARGIN) + BUFFER_MARGIN;
 		ret = wave4_vdi_allocate_array(inst->dev, p_dec_info->vb_fbc_y_tbl, count, size);
@@ -2401,11 +2401,11 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	pic_size = (buf_width << 16) | buf_height;
 
 	if (avc_encoding) {
-		mv_col_size = WAVE5_ENC_AVC_BUF_SIZE(buf_width, buf_height);
+		mv_col_size = W4_ENC_AVC_BUF_SIZE(buf_width, buf_height);
 		vb_mv.daddr = 0;
 		vb_mv.size = ALIGN(mv_col_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
 	} else {
-		mv_col_size = WAVE5_ENC_HEVC_BUF_SIZE(buf_width, buf_height);
+		mv_col_size = W4_ENC_HEVC_BUF_SIZE(buf_width, buf_height);
 		mv_col_size = ALIGN(mv_col_size, 16);
 		vb_mv.daddr = 0;
 		vb_mv.size = ALIGN(mv_col_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
@@ -2417,8 +2417,8 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 
 	p_enc_info->vb_mv = vb_mv;
 
-	fbc_y_tbl_size = ALIGN(WAVE5_FBC_LUMA_TABLE_SIZE(buf_width, buf_height), 16);
-	fbc_c_tbl_size = ALIGN(WAVE5_FBC_CHROMA_TABLE_SIZE(buf_width, buf_height), 16);
+	fbc_y_tbl_size = ALIGN(W4_FBC_LUMA_TABLE_SIZE(buf_width, buf_height), 16);
+	fbc_c_tbl_size = ALIGN(W4_FBC_CHROMA_TABLE_SIZE(buf_width, buf_height), 16);
 
 	vb_fbc_y_tbl.daddr = 0;
 	vb_fbc_y_tbl.size = ALIGN(fbc_y_tbl_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
@@ -2437,9 +2437,9 @@ int wave4_vpu_enc_register_framebuffer(struct device *dev, struct vpu_instance *
 	p_enc_info->vb_fbc_c_tbl = vb_fbc_c_tbl;
 
 	if (avc_encoding)
-		sub_sampled_size = WAVE5_SUBSAMPLED_ONE_SIZE_AVC(buf_width, buf_height);
+		sub_sampled_size = W4_SUBSAMPLED_ONE_SIZE_AVC(buf_width, buf_height);
 	else
-		sub_sampled_size = WAVE5_SUBSAMPLED_ONE_SIZE(buf_width, buf_height);
+		sub_sampled_size = W4_SUBSAMPLED_ONE_SIZE(buf_width, buf_height);
 	vb_sub_sam_buf.size = ALIGN(sub_sampled_size * count, BUFFER_MARGIN) + BUFFER_MARGIN;
 	vb_sub_sam_buf.daddr = 0;
 	ret = wave4_vdi_allocate_dma_memory(vpu_dev, &vb_sub_sam_buf);

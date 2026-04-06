@@ -82,7 +82,7 @@ int wave4_vpu_release_device(struct file *filp,
 		u32 fail_res;
 
 		ret = close_func(inst, &fail_res);
-		if (fail_res == WAVE5_SYSERR_VPU_STILL_RUNNING) {
+		if (fail_res == W4_SYSERR_VPU_STILL_RUNNING) {
 			dev_err(inst->dev->dev, "%s close failed, device is still running\n",
 				name);
 			return -EBUSY;

@@ -24,8 +24,8 @@
 #define VPU_PLATFORM_DEVICE_NAME "vdec-wave4"
 #define VPU_CLK_NAME "vcodec"
 
-#define WAVE5_IS_ENC BIT(0)
-#define WAVE5_IS_DEC BIT(1)
+#define W4_IS_ENC BIT(0)
+#define W4_IS_DEC BIT(1)
 
 #define SG2002_VC_SRAM_SHARE_OFFSET	0x24
 #define SG2002_VC_SRAM_SHARE_MASK	GENMASK(1, 0)
@@ -131,7 +131,7 @@ static void wave4_vpu_handle_irq(void *dev_id)
 			complete(&inst->irq_done);
 
 		if (irq_reason & W4_INT_PIC_RUN) {
-			val = BIT(INT_WAVE5_DEC_PIC);
+			val = BIT(INT_W4_DEC_PIC);
 			kfifo_in(&inst->irq_status, &val, sizeof(int));
 			complete(&inst->irq_done);
 		}
@@ -433,8 +433,8 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
-	dev->has_encoder = !!(match_data->flags & WAVE5_IS_ENC);
-	dev->has_decoder = !!(match_data->flags & WAVE5_IS_DEC);
+	dev->has_encoder = !!(match_data->flags & W4_IS_ENC);
+	dev->has_decoder = !!(match_data->flags & W4_IS_DEC);
 	dev->hw_cap_from_std_def1 = match_data->use_std_def1_caps;
 	dev->hw_std_def1_enc_mask = match_data->std_def1_enc_mask;
 	dev->hw_std_def1_dec_mask = match_data->std_def1_dec_mask;
@@ -686,7 +686,7 @@ static void wave4_vpu_remove(struct platform_device *pdev)
 
 static const struct wave4_match_data sophgo_wave4_data = {
 	/* Keep DT match flags as the userspace-visible capability contract. */
-	.flags = WAVE5_IS_ENC,
+	.flags = W4_IS_ENC,
 	.fw_name = "fw_vcodec/monet.bin",
 	.allow_internal_sram = true,
 	.force_polling_backend = true,

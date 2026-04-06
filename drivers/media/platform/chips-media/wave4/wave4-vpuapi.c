@@ -234,7 +234,7 @@ int wave4_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 
 	do {
 		ret = wave4_vpu_dec_finish_seq(inst, fail_res);
-		if (ret < 0 && *fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
+		if (ret < 0 && *fail_res != W4_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "dec_finish_seq timed out\n");
 			goto unlock_and_return;
 		}
@@ -242,7 +242,7 @@ int wave4_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res)
 		if (ret == 0)
 			break;
 
-		if (*fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
+		if (*fail_res != W4_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "dec_finish_seq timed out\n");
 			goto unlock_and_return;
 		}
@@ -329,7 +329,7 @@ int wave4_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of
 	struct vpu_device *vpu_dev = inst->dev;
 	struct frame_buffer *fb;
 
-	if (num_of_decoding_fbs >= WAVE5_MAX_FBS || num_of_display_fbs >= WAVE5_MAX_FBS)
+	if (num_of_decoding_fbs >= W4_MAX_FBS || num_of_display_fbs >= W4_MAX_FBS)
 		return -EINVAL;
 
 	p_dec_info = &inst->codec_info->dec_info;
@@ -537,7 +537,7 @@ int wave4_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 	rect_info.top = 0;
 	rect_info.bottom = 0;
 
-	if (decoded_index < WAVE5_MAX_FBS) {
+	if (decoded_index < W4_MAX_FBS) {
 		if (inst->std == W_HEVC_DEC || inst->std == W_AVC_DEC)
 			rect_info = p_dec_info->initial_info.pic_crop_rect;
 
@@ -549,7 +549,7 @@ int wave4_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 	info->rc_decoded = rect_info;
 
 	disp_idx = info->index_frame_display;
-	if (info->index_frame_display >= 0 && info->index_frame_display < WAVE5_MAX_FBS) {
+	if (info->index_frame_display >= 0 && info->index_frame_display < W4_MAX_FBS) {
 		disp_info = &p_dec_info->dec_out_info[disp_idx];
 		if (info->index_frame_display != info->index_frame_decoded) {
 			/*
@@ -592,10 +592,10 @@ int wave4_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_i
 	info->frame_display_flag = p_dec_info->frame_display_flag;
 
 	info->sequence_no = p_dec_info->initial_info.sequence_no;
-	if (decoded_index < WAVE5_MAX_FBS)
+	if (decoded_index < W4_MAX_FBS)
 		p_dec_info->dec_out_info[decoded_index] = *info;
 
-	if (disp_idx < WAVE5_MAX_FBS)
+	if (disp_idx < W4_MAX_FBS)
 		info->disp_frame.sequence_no = info->sequence_no;
 
 	if (info->sequence_changed) {
@@ -754,14 +754,14 @@ int wave4_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res)
 
 	do {
 		ret = wave4_vpu_enc_finish_seq(inst, fail_res);
-		if (ret < 0 && *fail_res != WAVE5_SYSERR_VPU_STILL_RUNNING) {
+		if (ret < 0 && *fail_res != W4_SYSERR_VPU_STILL_RUNNING) {
 			dev_warn(inst->dev->dev, "enc_finish_seq timed out\n");
 			mutex_unlock(&vpu_dev->hw_lock);
 			pm_runtime_put_sync(inst->dev->dev);
 			return ret;
 		}
 
-		if (*fail_res == WAVE5_SYSERR_VPU_STILL_RUNNING &&
+		if (*fail_res == W4_SYSERR_VPU_STILL_RUNNING &&
 		    retry++ >= MAX_FIRMWARE_CALL_RETRY) {
 			mutex_unlock(&vpu_dev->hw_lock);
 			pm_runtime_put_sync(inst->dev->dev);

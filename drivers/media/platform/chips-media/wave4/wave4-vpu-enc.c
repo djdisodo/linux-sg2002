@@ -378,7 +378,7 @@ static int start_encode(struct vpu_instance *inst, u32 *fail_res)
 		dev_dbg(inst->dev->dev, "%s: wave4_vpu_enc_start_one_frame fail: %d\n",
 			__func__, ret);
 
-		if (*fail_res == WAVE5_SYSERR_QUEUEING_FAIL)
+		if (*fail_res == W4_SYSERR_QUEUEING_FAIL)
 			ret = -EINVAL;
 
 		switch_state(inst, VPU_INST_STATE_STOP);
