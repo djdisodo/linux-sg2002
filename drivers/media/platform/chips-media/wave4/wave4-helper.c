@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
- * Wave5 series multi-standard codec IP - decoder interface
+ * Wave4 series multi-standard codec IP - decoder interface
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
 
-#include "wave5-helper.h"
+#include "wave4-helper.h"
 
 #define DEFAULT_BS_SIZE(width, height) ((width) * (height) / 8 * 3)
 
@@ -37,9 +37,9 @@ void wave4_cleanup_instance(struct vpu_instance *inst, struct file *filp)
 	int i;
 
 	for (i = 0; i < inst->fbc_buf_count; i++)
-		wave5_vpu_dec_reset_framebuffer(inst, i);
+		wave4_vpu_dec_reset_framebuffer(inst, i);
 
-	wave5_vdi_free_dma_memory(inst->dev, &inst->bitstream_vbuf);
+	wave4_vdi_free_dma_memory(inst->dev, &inst->bitstream_vbuf);
 	v4l2_ctrl_handler_free(&inst->v4l2_ctrl_hdl);
 	if (inst->v4l2_fh.vdev) {
 		v4l2_fh_del(&inst->v4l2_fh, filp);
@@ -64,13 +64,13 @@ int wave4_vpu_release_device(struct file *filp,
 	 * To prevent Null reference exception, the existing irq handler were
 	 * separated to two modules.
 	 * One is to queue interrupt reason into the irq handler,
-	 * the other is irq_thread to call the wave5_vpu_dec_finish_decode
+	 * the other is irq_thread to call the wave4_vpu_dec_finish_decode
 	 * to get decoded frame.
 	 * The list of instances should be protected between all flow of the
 	 * decoding process, but to protect the list in the irq_handler, spin lock
 	 * should be used, and mutex should be used in the irq_thread because spin lock
 	 * is not able to be used because mutex is already being used
-	 * in the wave5_vpu_dec_finish_decode.
+	 * in the wave4_vpu_dec_finish_decode.
 	 * So the spin lock and mutex were used to protect the list in the release function.
 	 */
 	mutex_lock(&inst->dev->irq_lock);
@@ -82,7 +82,7 @@ int wave4_vpu_release_device(struct file *filp,
 		u32 fail_res;
 
 		ret = close_func(inst, &fail_res);
-		if (fail_res == WAVE5_SYSERR_VPU_STILL_RUNNING) {
+		if (fail_res == W4_SYSERR_VPU_STILL_RUNNING) {
 			dev_err(inst->dev->dev, "%s close failed, device is still running\n",
 				name);
 			return -EBUSY;
@@ -135,7 +135,7 @@ int wave4_vpu_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue 
 
 int wave4_vpu_subscribe_event(struct v4l2_fh *fh, const struct v4l2_event_subscription *sub)
 {
-	struct vpu_instance *inst = wave5_to_vpu_inst(fh);
+	struct vpu_instance *inst = wave4_to_vpu_inst(fh);
 	bool is_decoder = inst->type == VPU_INST_TYPE_DEC;
 
 	dev_dbg(inst->dev->dev, "%s: [%s] type: %u id: %u | flags: %u\n", __func__,
@@ -179,7 +179,7 @@ int wave4_vpu_g_fmt_out(struct file *file, void *fh, struct v4l2_format *f)
 	return 0;
 }
 
-const struct vpu_format *wave5_find_vpu_fmt(unsigned int v4l2_pix_fmt,
+const struct vpu_format *wave4_find_vpu_fmt(unsigned int v4l2_pix_fmt,
 					    const struct vpu_format fmt_list[MAX_FMTS])
 {
 	unsigned int index;
@@ -192,7 +192,7 @@ const struct vpu_format *wave5_find_vpu_fmt(unsigned int v4l2_pix_fmt,
 	return NULL;
 }
 
-const struct vpu_format *wave5_find_vpu_fmt_by_idx(unsigned int idx,
+const struct vpu_format *wave4_find_vpu_fmt_by_idx(unsigned int idx,
 						   const struct vpu_format fmt_list[MAX_FMTS])
 {
 	if (idx >= MAX_FMTS)
@@ -204,7 +204,7 @@ const struct vpu_format *wave5_find_vpu_fmt_by_idx(unsigned int idx,
 	return &fmt_list[idx];
 }
 
-enum wave_std wave5_to_vpu_std(unsigned int v4l2_pix_fmt, enum vpu_instance_type type)
+enum wave_std wave4_to_vpu_std(unsigned int v4l2_pix_fmt, enum vpu_instance_type type)
 {
 	switch (v4l2_pix_fmt) {
 	case V4L2_PIX_FMT_H264:

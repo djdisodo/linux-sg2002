@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause) */
 /*
- * Wave5 series multi-standard codec IP - helper definitions
+ * Wave4 series multi-standard codec IP - helper definitions
  *
  * Copyright (C) 2021-2023 CHIPS&MEDIA INC
  */
@@ -14,9 +14,9 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/v4l2-ctrls.h>
-#include "wave5-vpuerror.h"
-#include "wave5-vpuconfig.h"
-#include "wave5-vdi.h"
+#include "wave4-vpuerror.h"
+#include "wave4-vpuconfig.h"
+#include "wave4-vdi.h"
 
 enum product_id {
 	PRODUCT_ID_W4,
@@ -39,17 +39,17 @@ enum vpu_instance_state {
 };
 
 /* Maximum available on hardware. */
-#define WAVE5_MAX_FBS 32
+#define W4_MAX_FBS 32
 
-#define MAX_REG_FRAME (WAVE5_MAX_FBS * 2)
+#define MAX_REG_FRAME (W4_MAX_FBS * 2)
 
-#define WAVE5_DEC_HEVC_BUF_SIZE(_w, _h) (DIV_ROUND_UP(_w, 64) * DIV_ROUND_UP(_h, 64) * 256 + 64)
-#define WAVE5_DEC_AVC_BUF_SIZE(_w, _h) ((((ALIGN(_w, 256) / 16) * (ALIGN(_h, 16) / 16)) + 16) * 80)
+#define W4_DEC_HEVC_BUF_SIZE(_w, _h) (DIV_ROUND_UP(_w, 64) * DIV_ROUND_UP(_h, 64) * 256 + 64)
+#define W4_DEC_AVC_BUF_SIZE(_w, _h) ((((ALIGN(_w, 256) / 16) * (ALIGN(_h, 16) / 16)) + 16) * 80)
 
-#define WAVE5_FBC_LUMA_TABLE_SIZE(_w, _h) (ALIGN(_h, 64) * ALIGN(_w, 256) / 32)
-#define WAVE5_FBC_CHROMA_TABLE_SIZE(_w, _h) (ALIGN((_h), 64) * ALIGN((_w) / 2, 256) / 32)
-#define WAVE5_ENC_AVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) * ALIGN(_h, 64) / 32)
-#define WAVE5_ENC_HEVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) / 64 * ALIGN(_h, 64) / 64 * 128)
+#define W4_FBC_LUMA_TABLE_SIZE(_w, _h) (ALIGN(_h, 64) * ALIGN(_w, 256) / 32)
+#define W4_FBC_CHROMA_TABLE_SIZE(_w, _h) (ALIGN((_h), 64) * ALIGN((_w) / 2, 256) / 32)
+#define W4_ENC_AVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) * ALIGN(_h, 64) / 32)
+#define W4_ENC_HEVC_BUF_SIZE(_w, _h) (ALIGN(_w, 64) / 64 * ALIGN(_h, 64) / 64 * 128)
 
 /*
  * common struct and definition
@@ -273,21 +273,21 @@ enum packed_format_num {
 	PACKED_VYUY,
 };
 
-enum wave5_interrupt_bit {
-	INT_WAVE5_INIT_VPU = 0,
-	INT_WAVE5_WAKEUP_VPU = 1,
-	INT_WAVE5_SLEEP_VPU = 2,
-	INT_WAVE5_CREATE_INSTANCE = 3,
-	INT_WAVE5_FLUSH_INSTANCE = 4,
-	INT_WAVE5_DESTROY_INSTANCE = 5,
-	INT_WAVE5_INIT_SEQ = 6,
-	INT_WAVE5_SET_FRAMEBUF = 7,
-	INT_WAVE5_DEC_PIC = 8,
-	INT_WAVE5_ENC_PIC = 8,
-	INT_WAVE5_ENC_SET_PARAM = 9,
-	INT_WAVE5_DEC_QUERY = 14,
-	INT_WAVE5_BSBUF_EMPTY = 15,
-	INT_WAVE5_BSBUF_FULL = 15,
+enum wave4_interrupt_bit {
+	INT_W4_INIT_VPU = 0,
+	INT_W4_WAKEUP_VPU = 1,
+	INT_W4_SLEEP_VPU = 2,
+	INT_W4_CREATE_INSTANCE = 3,
+	INT_W4_FLUSH_INSTANCE = 4,
+	INT_W4_DESTROY_INSTANCE = 5,
+	INT_W4_INIT_SEQ = 6,
+	INT_W4_SET_FRAMEBUF = 7,
+	INT_W4_DEC_PIC = 8,
+	INT_W4_ENC_PIC = 8,
+	INT_W4_ENC_SET_PARAM = 9,
+	INT_W4_DEC_QUERY = 14,
+	INT_W4_BSBUF_EMPTY = 15,
+	INT_W4_BSBUF_FULL = 15,
 };
 
 enum pic_type {
@@ -423,7 +423,7 @@ struct dec_output_info {
 	/**
 	 * this variable reports that sequence has been changed while H.264/AVC stream decoding.
 	 * if it is 1, HOST application can get the new sequence information by calling
-	 * vpu_dec_get_initial_info() or wave5_vpu_dec_issue_seq_init().
+	 * vpu_dec_get_initial_info() or wave4_vpu_dec_issue_seq_init().
 	 *
 	 * for H.265/HEVC decoder, each bit has a different meaning as follows.
 	 *
@@ -680,7 +680,7 @@ struct dec_info {
 	u32 user_data_enable;
 	u32 user_data_buf_size;
 	struct vpu_buf vb_work;
-	struct dec_output_info dec_out_info[WAVE5_MAX_FBS];
+	struct dec_output_info dec_out_info[W4_MAX_FBS];
 	u32 seq_change_mask;
 	enum temporal_id_mode temp_id_select_mode;
 	u32 target_temp_id;
@@ -693,6 +693,14 @@ struct dec_info {
 	bool reorder_enable;
 	bool first_cycle_check;
 	u32 stream_endflag: 1;
+};
+
+struct wave4_enc_src_meta {
+	s32 idx;
+	s32 dst_idx;
+	u64 timestamp;
+	u32 flags;
+	struct v4l2_timecode timecode;
 };
 
 struct enc_info {
@@ -720,7 +728,11 @@ struct enc_info {
 	struct vpu_buf vb_task;
 	u64 cur_pts; /* current timestamp in 90_k_hz */
 	u64 pts_map[32]; /* PTS mapped with source frame index */
-	s32 pending_src_idx; /* source vb2 index currently inflight in firmware (-1 when idle) */
+	struct wave4_enc_src_meta src_meta_fifo[W4_COMMAND_QUEUE_DEPTH];
+	u32 src_meta_head;
+	u32 src_meta_count;
+	int async_pm_ref_held; /* runtime-PM ref held by async device_run until finish callback */
+	bool stop_pending; /* streamoff is in progress; ignore late ENC_PIC completions */
 	u32 instance_queue_count;
 	u32 report_queue_count;
 	bool first_cycle_check;
@@ -756,13 +768,22 @@ struct vpu_device {
 	struct hrtimer hrtimer;
 	struct kthread_work work;
 	struct kthread_worker *worker;
-	int vpu_poll_interval;
 	int num_clks;
 	struct task_struct *irq_thread;
 	struct semaphore irq_sem; /* signal to irq_thread when interrupt happens*/
 	struct reset_control *resets;
 	spinlock_t irq_spinlock; /* protect instances list */
+	bool has_encoder;
+	bool has_decoder;
 	bool fw_running;
+	bool reserved_mem_inited;
+	bool hw_cap_from_std_def1;
+	bool hw_cap_queried;
+	u32 hw_std_def0;
+	u32 hw_std_def1;
+	u32 hw_conf_feature;
+	u32 hw_std_def1_enc_mask;
+	u32 hw_std_def1_dec_mask;
 };
 
 struct vpu_instance;
@@ -812,7 +833,7 @@ struct vpu_instance {
 	bool nv21;
 	bool eos;
 	bool sent_eos; /* check if EOS is sent to application */
-	bool retry; /* retry to feed bitstream if failure reason is WAVE5_SYSERR_QUEUEING_FAIL*/
+	bool retry; /* retry to feed bitstream if failure reason is W4_SYSERR_QUEUEING_FAIL*/
 	int queuing_num; /* count of bitstream queued */
 	struct mutex feed_lock; /* lock for feeding bitstream buffers */
 	bool queuing_fail; /* if there is the queuing failure */
@@ -835,49 +856,49 @@ struct vpu_instance {
 	struct enc_wave_param enc_param;
 };
 
-void wave5_vdi_write_register(struct vpu_device *vpu_dev, u32 addr, u32 data);
-u32 wave5_vdi_read_register(struct vpu_device *vpu_dev, u32 addr);
-int wave5_vdi_clear_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
-int wave5_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
-int wave5_vdi_allocate_array(struct vpu_device *vpu_dev, struct vpu_buf *array, unsigned int count,
+void wave4_vdi_write_register(struct vpu_device *vpu_dev, u32 addr, u32 data);
+u32 wave4_vdi_read_register(struct vpu_device *vpu_dev, u32 addr);
+int wave4_vdi_clear_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
+int wave4_vdi_allocate_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
+int wave4_vdi_allocate_array(struct vpu_device *vpu_dev, struct vpu_buf *array, unsigned int count,
 			     size_t size);
-int wave5_vdi_write_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb, size_t offset,
+int wave4_vdi_write_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb, size_t offset,
 			   u8 *data, size_t len);
-int wave5_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
-void wave5_vdi_allocate_sram(struct vpu_device *vpu_dev);
-void wave5_vdi_free_sram(struct vpu_device *vpu_dev);
+int wave4_vdi_free_dma_memory(struct vpu_device *vpu_dev, struct vpu_buf *vb);
+void wave4_vdi_allocate_sram(struct vpu_device *vpu_dev);
+void wave4_vdi_free_sram(struct vpu_device *vpu_dev);
 
 int wave4_vpu_init_with_bitcode(struct device *dev, u8 *bitcode, size_t size);
 int wave4_vpu_flush_instance(struct vpu_instance *inst);
 int wave4_vpu_get_version_info(struct device *dev, u32 *revision, unsigned int *product_id);
-int wave5_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_param);
-int wave5_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res);
-int wave5_vpu_dec_issue_seq_init(struct vpu_instance *inst);
-int wave5_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initial_info *info);
-int wave5_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of_decoding_fbs,
+int wave4_vpu_dec_open(struct vpu_instance *inst, struct dec_open_param *open_param);
+int wave4_vpu_dec_close(struct vpu_instance *inst, u32 *fail_res);
+int wave4_vpu_dec_issue_seq_init(struct vpu_instance *inst);
+int wave4_vpu_dec_complete_seq_init(struct vpu_instance *inst, struct dec_initial_info *info);
+int wave4_vpu_dec_register_frame_buffer_ex(struct vpu_instance *inst, int num_of_decoding_fbs,
 					   int num_of_display_fbs, int stride, int height);
-int wave5_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail);
-int wave5_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_info *info);
-int wave5_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int update_wr_ptr);
-dma_addr_t wave5_vpu_dec_get_rd_ptr(struct vpu_instance *inst);
-int wave5_vpu_dec_reset_framebuffer(struct vpu_instance *inst, unsigned int index);
-int wave5_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter);
-int wave5_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *prd_ptr,
+int wave4_vpu_dec_start_one_frame(struct vpu_instance *inst, u32 *res_fail);
+int wave4_vpu_dec_get_output_info(struct vpu_instance *inst, struct dec_output_info *info);
+int wave4_vpu_dec_set_rd_ptr(struct vpu_instance *inst, dma_addr_t addr, int update_wr_ptr);
+dma_addr_t wave4_vpu_dec_get_rd_ptr(struct vpu_instance *inst);
+int wave4_vpu_dec_reset_framebuffer(struct vpu_instance *inst, unsigned int index);
+int wave4_vpu_dec_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter);
+int wave4_vpu_dec_get_bitstream_buffer(struct vpu_instance *inst, dma_addr_t *prd_ptr,
 				       dma_addr_t *pwr_ptr, size_t *size);
-int wave5_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size);
-int wave5_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index);
-int wave5_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index);
+int wave4_vpu_dec_update_bitstream_buffer(struct vpu_instance *inst, size_t size);
+int wave4_vpu_dec_clr_disp_flag(struct vpu_instance *inst, int index);
+int wave4_vpu_dec_set_disp_flag(struct vpu_instance *inst, int index);
 
-int wave5_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_param);
-int wave5_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res);
-int wave5_vpu_enc_issue_seq_init(struct vpu_instance *inst);
-int wave5_vpu_enc_complete_seq_init(struct vpu_instance *inst, struct enc_initial_info *info);
-int wave5_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int num,
+int wave4_vpu_enc_open(struct vpu_instance *inst, struct enc_open_param *open_param);
+int wave4_vpu_enc_close(struct vpu_instance *inst, u32 *fail_res);
+int wave4_vpu_enc_issue_seq_init(struct vpu_instance *inst);
+int wave4_vpu_enc_complete_seq_init(struct vpu_instance *inst, struct enc_initial_info *info);
+int wave4_vpu_enc_register_frame_buffer(struct vpu_instance *inst, unsigned int num,
 					unsigned int stride, int height,
 					enum tiled_map_type map_type);
-int wave5_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *param,
+int wave4_vpu_enc_start_one_frame(struct vpu_instance *inst, struct enc_param *param,
 				  u32 *fail_res);
-int wave5_vpu_enc_get_output_info(struct vpu_instance *inst, struct enc_output_info *info);
-int wave5_vpu_enc_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter);
+int wave4_vpu_enc_get_output_info(struct vpu_instance *inst, struct enc_output_info *info);
+int wave4_vpu_enc_give_command(struct vpu_instance *inst, enum codec_command cmd, void *parameter);
 
 #endif
