@@ -739,17 +739,6 @@ int wave4_vpu_init(struct device *dev, u8 *fw, size_t size)
 				 "w4 init timeout with live VCPU (pc=0x%x), resident fallback disabled\n",
 				 vcpu_pc);
 		}
-		dev_err(vpu_dev->dev,
-			"w4 init timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-			vpu_read_reg(vpu_dev, W4_COMMAND),
-			vpu_read_reg(vpu_dev, W4_VPU_BUSY_STATUS),
-			vpu_read_reg(vpu_dev, W4_VPU_HOST_INT_REQ),
-			vpu_read_reg(vpu_dev, W4_VPU_REMAP_CORE_START),
-			vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
-			vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-			vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
-			vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
-			vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
 		return ret;
 	}
 
@@ -1540,17 +1529,6 @@ int wave4_vpu_re_init(struct device *dev, u8 *fw, size_t size)
 					 "w4 reinit timeout with live VCPU (pc=0x%x), resident fallback disabled\n",
 					 vcpu_pc);
 			}
-			dev_err(vpu_dev->dev,
-				"w4 reinit timeout debug: cmd=0x%x busy=0x%x host_int=0x%x remap_start=0x%x ret_success=0x%x ret_fail=0x%x vint_sts=0x%x vint_reason=0x%x vcpu_pc=0x%x\n",
-				vpu_read_reg(vpu_dev, W4_COMMAND),
-				vpu_read_reg(vpu_dev, W4_VPU_BUSY_STATUS),
-				vpu_read_reg(vpu_dev, W4_VPU_HOST_INT_REQ),
-				vpu_read_reg(vpu_dev, W4_VPU_REMAP_CORE_START),
-				vpu_read_reg(vpu_dev, W4_RET_SUCCESS),
-				vpu_read_reg(vpu_dev, W4_RET_FAIL_REASON),
-				vpu_read_reg(vpu_dev, W4_VPU_VPU_INT_STS),
-				vpu_read_reg(vpu_dev, W4_VPU_VINT_REASON),
-				vpu_read_reg(vpu_dev, W4_VCPU_CUR_PC));
 			return ret;
 		}
 
