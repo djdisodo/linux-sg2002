@@ -35,6 +35,7 @@
 #define W4_INT_SET_PARAM_SEQ		BIT(1)
 #define W4_INT_PIC_RUN			BIT(3)
 #define W4_INT_QUERY			BIT(9)
+#define W4_POLL_INTERVAL_MS		5
 /*
  * Wave420L-specific capability map observed on SG2002:
  * - std_def1 bit16: HEVC encoder path present
@@ -54,22 +55,10 @@ struct wave4_match_data {
 	u32 std_def1_dec_mask;
 };
 
-static int vpu_poll_interval = 5;
-module_param(vpu_poll_interval, int, 0644);
 static bool w4_forbid_runtime_pm;
 module_param(w4_forbid_runtime_pm, bool, 0644);
 MODULE_PARM_DESC(w4_forbid_runtime_pm,
 		 "Keep Wave4 runtime PM active (no autosuspend sleep/wake transitions)");
-
-/*
- * SG2002 Wave4 integrations can expose an IRQ resource that never increments
- * in /proc/interrupts. Keep polling enabled by default so async PIC completion
- * paths continue to work even when the wired IRQ line is silent.
- */
-static int wave4_poll_mode = 1;
-module_param_named(w4_poll_mode, wave4_poll_mode, int, 0644);
-MODULE_PARM_DESC(w4_poll_mode,
-		 "Use polling-based IRQ handling (0=threaded IRQ, 1=polling default)");
 
 int wave4_vpu_wait_interrupt(struct vpu_instance *inst, unsigned int timeout)
 {
@@ -209,7 +198,7 @@ static enum hrtimer_restart wave4_vpu_timer_callback(struct hrtimer *timer)
 			container_of(timer, struct vpu_device, hrtimer);
 
 	kthread_queue_work(dev->worker, &dev->work);
-	hrtimer_forward_now(timer, ns_to_ktime(vpu_poll_interval * NSEC_PER_MSEC));
+	hrtimer_forward_now(timer, ns_to_ktime(W4_POLL_INTERVAL_MS * NSEC_PER_MSEC));
 
 	return HRTIMER_RESTART;
 }
@@ -359,7 +348,7 @@ static __maybe_unused int wave4_pm_resume(struct device *dev)
 	}
 
 	if (vpu->irq < 0 && !hrtimer_active(&vpu->hrtimer))
-		hrtimer_start(&vpu->hrtimer, ns_to_ktime(vpu->vpu_poll_interval * NSEC_PER_MSEC),
+		hrtimer_start(&vpu->hrtimer, ns_to_ktime(W4_POLL_INTERVAL_MS * NSEC_PER_MSEC),
 			      HRTIMER_MODE_REL_PINNED);
 
 	return ret;
@@ -529,8 +518,6 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 	dev->irq = platform_get_irq(pdev, 0);
 	if (match_data->force_polling_backend && dev->irq >= 0)
 		dev->irq = -1;
-	if (READ_ONCE(wave4_poll_mode))
-		dev->irq = -1;
 	if (dev->irq < 0) {
 		dev_info(&pdev->dev, "using polling IRQ backend\n");
 		sema_init(&dev->irq_sem, 1);
@@ -543,7 +530,6 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 			ret = PTR_ERR(dev->worker);
 			goto err_vdi_release;
 		}
-		dev->vpu_poll_interval = vpu_poll_interval;
 		kthread_init_work(&dev->work, wave4_vpu_irq_work_fn);
 		/*
 		 * In polling mode, keep timer alive from probe when runtime PM
@@ -551,7 +537,7 @@ static int wave4_vpu_probe(struct platform_device *pdev)
 		 */
 		if (w4_forbid_runtime_pm)
 			hrtimer_start(&dev->hrtimer,
-				      ns_to_ktime(dev->vpu_poll_interval * NSEC_PER_MSEC),
+				      ns_to_ktime(W4_POLL_INTERVAL_MS * NSEC_PER_MSEC),
 				      HRTIMER_MODE_REL_PINNED);
 	} else {
 		ret = devm_request_threaded_irq(&pdev->dev, dev->irq, wave4_vpu_irq,

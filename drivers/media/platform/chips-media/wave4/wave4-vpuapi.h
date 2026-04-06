@@ -768,7 +768,6 @@ struct vpu_device {
 	struct hrtimer hrtimer;
 	struct kthread_work work;
 	struct kthread_worker *worker;
-	int vpu_poll_interval;
 	int num_clks;
 	struct task_struct *irq_thread;
 	struct semaphore irq_sem; /* signal to irq_thread when interrupt happens*/
